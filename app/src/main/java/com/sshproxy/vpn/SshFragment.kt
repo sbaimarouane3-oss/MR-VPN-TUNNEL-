@@ -7,6 +7,7 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.fragment.app.Fragment
@@ -37,6 +38,17 @@ class SshFragment : Fragment(R.layout.fragment_ssh) {
     lateinit var importedStatusContainer: LinearLayout
     lateinit var txtImportedStatus: TextView
 
+    // Views ديال التصميم الجديد فقط (عرض/status) — بلا أي منطق اتصال،
+    // كيتحدثو فـ MainActivity جنب نفس الأسطر لي كانت كتبدل نص btnConnect
+    // من قبل.
+    lateinit var viewStatusDot: View
+    lateinit var imgStatusCheck: ImageView
+    lateinit var txtStatusText: TextView
+    lateinit var txtServerValue: TextView
+    lateinit var txtProtocolValue: TextView
+    lateinit var txtPortValue: TextView
+    lateinit var txtStatusCardValue: TextView
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         edtHost = view.findViewById(R.id.edtHost)
@@ -56,6 +68,14 @@ class SshFragment : Fragment(R.layout.fragment_ssh) {
         btnRemoveImported = view.findViewById(R.id.btnRemoveImported)
         importedStatusContainer = view.findViewById(R.id.importedStatusContainer)
         txtImportedStatus = view.findViewById(R.id.txtImportedStatus)
+
+        viewStatusDot = view.findViewById(R.id.viewStatusDot)
+        imgStatusCheck = view.findViewById(R.id.imgStatusCheck)
+        txtStatusText = view.findViewById(R.id.txtStatusText)
+        txtServerValue = view.findViewById(R.id.txtServerValue)
+        txtProtocolValue = view.findViewById(R.id.txtProtocolValue)
+        txtPortValue = view.findViewById(R.id.txtPortValue)
+        txtStatusCardValue = view.findViewById(R.id.txtStatusCardValue)
 
         (requireActivity() as? MainActivity)?.onSshFragmentReady(this)
     }
