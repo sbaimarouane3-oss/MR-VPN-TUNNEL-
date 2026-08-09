@@ -7,7 +7,6 @@ import android.content.IntentFilter
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
-import android.text.InputType
 import android.view.View
 import android.widget.EditText
 import android.widget.TextView
@@ -169,7 +168,7 @@ class MainActivity : AppCompatActivity() {
         viewPager.offscreenPageLimit = 1
         viewPager.adapter = MainPagerAdapter(this)
         TabLayoutMediator(tabLayout, viewPager) { tab, position ->
-            tab.text = if (position == 0) "SSH" else "LOG"
+            tab.text = if (position == 0) "SSH SETTINGS" else "LOG"
         }.attach()
 
         startLogPolling()
@@ -396,73 +395,33 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showImportDialog() {
-        val density = resources.displayMetrics.density
-        fun dp(v: Int) = (v * density).toInt()
-
-        // Fixed, compact height instead of wrap_content: a long pasted
-        // MRVPN:// code used to make this field grow taller and taller,
-        // pushing Import/Cancel down past the bottom of the screen once the
-        // keyboard opened. Now it scrolls internally (like a normal text
-        // box) and never grows past this height, so the buttons always stay
-        // put right underneath it - matching the Falcon Tunnel "Add Server"
-        // layout.
-        val input = EditText(this).apply {
-            hint = "MRVPN://... or vless:// vmess:// trojan:// ss://"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
-            gravity = android.view.Gravity.TOP or android.view.Gravity.START
-            maxLines = 6
-            isVerticalScrollBarEnabled = true
-            movementMethod = android.text.method.ScrollingMovementMethod()
-            // Long-press to select/copy/edit still works out of the box on a
-            // plain EditText - it's editable text, so no extra flag is
-            // needed for that (unlike a read-only TextView).
-            setTextColor(android.graphics.Color.parseColor("#1DB954"))
-            setHintTextColor(android.graphics.Color.parseColor("#1DB95480"))
-            highlightColor = android.graphics.Color.parseColor("#331DB954")
-            background = androidx.core.content.ContextCompat.getDrawable(
-                this@MainActivity, R.drawable.bg_edittext_green_border
-            )
-            setPadding(dp(16), dp(12), dp(16), dp(12))
-            layoutParams = android.widget.LinearLayout.LayoutParams(
-                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(140)
-            ).apply { topMargin = dp(8) }
-        }
-
-        val message = TextView(this).apply {
-            text = "Paste the import code (MRVPN://...) or a V2Ray/Xray link (vless:// vmess:// trojan:// ss://) / JSON."
-            setPadding(dp(16), dp(8), dp(16), dp(6))
-        }
-
-        val container = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-            setPadding(dp(8), dp(8), dp(8), 0)
-            addView(message)
-            addView(input)
-        }
+        // نفس المنطق بالضبط (handleImportCode على نص الحقل) - غير الشكل
+        // البصري تبدل من AlertDialog القياسي لـ layout مخصص عصري
+        // (dialog_import.xml) بزوايا مدورة وأزرار CANCEL / IMPORT.
+        val view = layoutInflater.inflate(R.layout.dialog_import, null)
+        val input = view.findViewById<EditText>(R.id.edtImportCode)
+        val btnCancel = view.findViewById<View>(R.id.btnImportCancel)
+        val btnConfirm = view.findViewById<View>(R.id.btnImportConfirm)
 
         val dialog = AlertDialog.Builder(this)
-            .setTitle("Import Code")
-            .setView(container)
-            .setPositiveButton("Import") { _, _ ->
-                handleImportCode(input.text.toString())
-            }
-            .setNegativeButton("Cancel", null)
+            .setView(view)
+            .setCancelable(true)
             .create()
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
 
         // The field above already has a fixed height, but we still tell the
         // dialog window to RESIZE (not just pan) when the keyboard shows, so
         // the whole dialog shrinks to fit above it and Import/Cancel are
         // never hidden underneath.
         dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-        dialog.show()
 
-        // Must be colored after show() - getButton() returns null before
-        // the dialog's views actually exist.
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE)
-            ?.setTextColor(android.graphics.Color.parseColor("#1DB954")) // Import: green
-        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)
-            ?.setTextColor(android.graphics.Color.parseColor("#FF4444")) // Cancel: red
+        btnCancel.setOnClickListener { dialog.dismiss() }
+        btnConfirm.setOnClickListener {
+            handleImportCode(input.text.toString())
+            dialog.dismiss()
+        }
+
+        dialog.show()
     }
 
     private fun handleImportCode(rawCode: String) {
@@ -597,6 +556,10 @@ class MainActivity : AppCompatActivity() {
             f.importedStatusContainer.visibility = View.GONE
             f.manualFieldsContainer.visibility = View.VISIBLE
         }
+        // تحديث فوري لـ Card ديال Server/Protocol/Port بعد أي تغيير فـ
+        // الكونفيغ المستورد (عرض فقط - نفس الأعلام لي كايستعملهم
+        // applyConnectButtonState() بلا ما نمس منطق الاستيراد فوق).
+        updateConnectionSummary()
     }
 
     private fun startLogPolling() {
@@ -660,6 +623,83 @@ class MainActivity : AppCompatActivity() {
             connected -> "DISCONNECT"
             else -> "CONNECT"
         }
+
+        // ===== واجهة جديدة فقط (status dot / checkmark / cards) - عرض =====
+        // بلا أي تأثير على منطق الاتصال أعلاه. كتقرا نفس الأعلام
+        // (connecting/reconnectingUi/connected) لي دابا محسوبين.
+        val statusLabel = when {
+            connecting -> "CONNECTING..."
+            reconnectingUi -> "RECONNECTING..."
+            connected -> "CONNECTED"
+            else -> "DISCONNECTED"
+        }
+        val statusColor = when {
+            connecting || reconnectingUi -> android.graphics.Color.parseColor("#FFA726")
+            connected -> android.graphics.Color.parseColor("#1DB954")
+            else -> android.graphics.Color.parseColor("#5C6672")
+        }
+        f.txtStatusText.text = statusLabel
+        f.txtStatusText.setTextColor(statusColor)
+        f.txtStatusCardValue.text = statusLabel.lowercase()
+            .replaceFirstChar { it.uppercase() }
+        f.txtStatusCardValue.setTextColor(statusColor)
+        f.viewStatusDot.backgroundTintList = android.content.res.ColorStateList.valueOf(statusColor)
+        f.viewStatusDot.visibility = if (connected) View.GONE else View.VISIBLE
+        f.imgStatusCheck.visibility = if (connected) View.VISIBLE else View.GONE
+
+        updateConnectionSummary()
+    }
+
+    /**
+     * كيحدث Card ديال "Connection Details" (Server/Protocol/Port) - عرض
+     * فقط، بلا أي قراءة/كتابة جديدة لأي حاجة كتأثر على الاتصال الفعلي.
+     * كيتقرا نفس المصادر لي كايستعملهم startVpnService() ديجا
+     * (activeXrayConfig / activeImportedConfig / حقول SSH اليدوية).
+     */
+    private fun updateConnectionSummary() {
+        val f = sshFragment ?: return
+        val xray = activeXrayConfig
+        val ssh = activeImportedConfig
+
+        val server: String
+        val protocol: String
+        val port: String
+
+        when {
+            xray != null -> {
+                server = maskForDisplay(xray.address)
+                protocol = xray.protocol.name + if (xray.security != "none") " • ${xray.security.uppercase()}" else ""
+                port = if (xray.port > 0) xray.port.toString() else "—"
+            }
+            ssh != null -> {
+                server = maskForDisplay(ssh.host)
+                protocol = ssh.protocolLabel()
+                port = ssh.port.toString()
+            }
+            else -> {
+                val hostPort = f.edtHost.text?.toString()?.trim().orEmpty()
+                val host = if (hostPort.contains(":")) hostPort.substringBeforeLast(":") else hostPort
+                port = if (hostPort.contains(":")) hostPort.substringAfterLast(":") else "—"
+                server = if (host.isBlank()) "—" else maskForDisplay(host)
+                protocol = buildString {
+                    append("SSH")
+                    if (f.chkUseSsl.isChecked) append("-TLS")
+                    if (f.chkUsePayload.isChecked) append("-Payload")
+                }
+            }
+        }
+
+        f.txtServerValue.text = server
+        f.txtProtocolValue.text = protocol
+        f.txtPortValue.text = port
+    }
+
+    /** كيخبي جزء من عنوان السيرفر فالعرض فقط (مثلا za**********) - بلا
+     *  ما يمس القيمة الحقيقية المخزنة أو المستعملة فالاتصال. */
+    private fun maskForDisplay(host: String): String {
+        if (host.isBlank()) return "—"
+        if (host.length <= 4) return "****"
+        return host.take(2) + "*".repeat((host.length - 2).coerceAtMost(10))
     }
 
     private fun appendStartupDiag(text: String) {
