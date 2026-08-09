@@ -39,25 +39,66 @@
                     android:textStyle="bold"
                     android:letterSpacing="0.12" />
 
+                <!-- زر الاتصال: دائري، بلا نص فوقو (كان "DISCONNECTED" هنا
+                     من قبل - تحيد). حالة الاتصال (نص+لون) بانة تحت الدائرة
+                     غير كوصف صغير، ماشي فوق الزر. -->
+                <FrameLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp">
+
+                    <!-- حلقة نبض خفيفة (Connecting/Reconnecting) - مخبية
+                         بالـdefault، كيتحكم فيها MainActivity عبر animator
+                         واحد بلا ما يعاود يبدا كل مرة (شوف updateConnectButtonVisual). -->
+                    <View
+                        android:id="@+id/viewConnectPulseRing"
+                        android:layout_width="150dp"
+                        android:layout_height="150dp"
+                        android:layout_gravity="center"
+                        android:background="@drawable/shape_pulse_ring"
+                        android:visibility="invisible" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnConnect"
+                        android:layout_width="140dp"
+                        android:layout_height="140dp"
+                        android:layout_gravity="center"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:insetLeft="0dp"
+                        android:insetRight="0dp"
+                        android:backgroundTint="@color/state_idle"
+                        android:text=""
+                        app:icon="@drawable/ic_vpn_waves"
+                        app:iconTint="@color/text_primary"
+                        app:iconSize="56dp"
+                        app:iconPadding="0dp"
+                        app:iconGravity="textStart"
+                        app:cornerRadius="70dp"
+                        app:rippleColor="#33FFFFFF"
+                        android:contentDescription="Connect" />
+                </FrameLayout>
+
+                <!-- وصف الحالة الحالية - سطر صغير تحت الزر، ماشي فوقو -->
                 <LinearLayout
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:layout_marginTop="14dp">
+                    android:layout_marginTop="16dp">
 
                     <View
                         android:id="@+id/viewStatusDot"
-                        android:layout_width="10dp"
-                        android:layout_height="10dp"
-                        android:layout_marginEnd="8dp"
+                        android:layout_width="8dp"
+                        android:layout_height="8dp"
+                        android:layout_marginEnd="7dp"
                         android:background="@drawable/shape_dot" />
 
                     <ImageView
                         android:id="@+id/imgStatusCheck"
-                        android:layout_width="18dp"
-                        android:layout_height="18dp"
-                        android:layout_marginEnd="8dp"
+                        android:layout_width="15dp"
+                        android:layout_height="15dp"
+                        android:layout_marginEnd="7dp"
                         android:src="@drawable/ic_check_circle"
                         android:visibility="gone"
                         android:contentDescription="Connected" />
@@ -68,24 +109,10 @@
                         android:layout_height="wrap_content"
                         android:text="DISCONNECTED"
                         android:textColor="@color/text_secondary"
-                        android:textSize="17sp"
+                        android:textSize="13sp"
                         android:textStyle="bold"
                         android:letterSpacing="0.03" />
                 </LinearLayout>
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnConnect"
-                    android:layout_width="match_parent"
-                    android:layout_height="56dp"
-                    android:layout_marginTop="22dp"
-                    android:backgroundTint="@color/accent_green"
-                    android:text="CONNECT"
-                    android:textColor="#000000"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:letterSpacing="0.04"
-                    app:cornerRadius="28dp"
-                    app:rippleColor="#331A1A1A" />
 
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
@@ -162,7 +189,7 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:gravity="end"
-                        android:text="SSH + Payload"
+                        android:text="—"
                         android:textColor="@color/text_primary"
                         android:textSize="13sp"
                         android:textStyle="bold"
@@ -200,7 +227,9 @@
                         android:text="—"
                         android:textColor="@color/text_primary"
                         android:textSize="13sp"
-                        android:textStyle="bold" />
+                        android:textStyle="bold"
+                        android:singleLine="true"
+                        android:ellipsize="end" />
                 </LinearLayout>
 
                 <View
@@ -269,17 +298,23 @@
                 android:orientation="vertical"
                 android:padding="18dp">
 
+                <!-- ملاحظة إصلاح: TextInputLayout قبل كان فيه hint، وEditText
+                     فالداخل عندو hint خاص بيه هو الآخر - هادشي عمدا مانتصحش
+                     بيه Material Components (كيسبب تداخل/ازدواجية فالـfloating
+                     label). دابا الـhint كاين مرة وحدة غير فـ TextInputLayout،
+                     والمثال (placeholder) تحول لـ helperText صغير تحت الحقل. -->
                 <com.google.android.material.textfield.TextInputLayout
                     style="@style/ModernTextInputLayout"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:hint="SSH Host:Port">
+                    android:hint="SSH Host:Port"
+                    app:helperText="e.g. example.com:443"
+                    app:helperTextEnabled="true">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/edtHost"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:hint="example.com:443"
                         android:textColor="@color/text_primary"
                         android:inputType="text" />
                 </com.google.android.material.textfield.TextInputLayout>
@@ -295,7 +330,6 @@
                         android:id="@+id/edtUser"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:hint="user"
                         android:textColor="@color/text_primary"
                         android:inputType="text" />
                 </com.google.android.material.textfield.TextInputLayout>
@@ -313,7 +347,6 @@
                         android:id="@+id/edtPass"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:hint="pass"
                         android:textColor="@color/text_primary"
                         android:inputType="textPassword" />
                 </com.google.android.material.textfield.TextInputLayout>
@@ -365,13 +398,14 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp"
-                    android:hint="UDPGW Port">
+                    android:hint="UDPGW Port"
+                    app:helperText="e.g. 7300"
+                    app:helperTextEnabled="true">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/edtUdpgwPort"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:hint="e.g. 7300"
                         android:textColor="@color/text_primary"
                         android:inputType="number" />
                 </com.google.android.material.textfield.TextInputLayout>
@@ -381,13 +415,14 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="14dp"
-                    android:hint="SNI (SSL only)">
+                    android:hint="SNI (SSL only)"
+                    app:helperText="e.g. google.com — leave blank to use host"
+                    app:helperTextEnabled="true">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/edtSni"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:hint="e.g. google.com (leave blank to use host)"
                         android:textColor="@color/text_primary"
                         android:inputType="text" />
                 </com.google.android.material.textfield.TextInputLayout>
@@ -437,13 +472,14 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="16dp"
-                    android:hint="Remote Proxy (ip:port)">
+                    android:hint="Remote Proxy (ip:port)"
+                    app:helperText="e.g. proxy.host.com:80"
+                    app:helperTextEnabled="true">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/edtProxy"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:hint="proxy.host.com:80"
                         android:textColor="@color/text_primary"
                         android:inputType="text" />
                 </com.google.android.material.textfield.TextInputLayout>
