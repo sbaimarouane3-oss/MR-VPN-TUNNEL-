@@ -3,7 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:background="#0F1115"
+    android:background="@drawable/shape_dialog_bg"
     android:padding="24dp">
 
     <TextView
@@ -11,7 +11,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="New Version Available"
-        android:textColor="#FFFFFF"
+        android:textColor="@color/text_primary"
         android:textSize="18sp"
         android:textStyle="bold" />
 
@@ -21,7 +21,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
         android:text="Version 2.0"
-        android:textColor="#1DB954"
+        android:textColor="@color/accent_green"
         android:textSize="13sp" />
 
     <TextView
@@ -30,7 +30,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="14dp"
         android:text="Improvements and fixes."
-        android:textColor="#CCCCCC"
+        android:textColor="@color/text_secondary"
         android:textSize="14sp" />
 
     <LinearLayout
@@ -45,11 +45,11 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:layout_marginEnd="8dp"
-            android:background="#1A1C22"
+            android:background="@drawable/shape_btn_flat"
             android:gravity="center"
             android:padding="14dp"
             android:text="LATER"
-            android:textColor="#AAAAAA"
+            android:textColor="@color/text_secondary"
             android:textStyle="bold"
             android:clickable="true"
             android:focusable="true" />
@@ -59,7 +59,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:background="#1DB954"
+            android:background="@drawable/shape_btn_accent"
             android:gravity="center"
             android:padding="14dp"
             android:text="DOWNLOAD"
