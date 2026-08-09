@@ -44,6 +44,7 @@ class SshFragment : Fragment(R.layout.fragment_ssh) {
     lateinit var viewStatusDot: View
     lateinit var imgStatusCheck: ImageView
     lateinit var txtStatusText: TextView
+    lateinit var viewConnectPulseRing: View
     lateinit var txtServerValue: TextView
     lateinit var txtProtocolValue: TextView
     lateinit var txtPortValue: TextView
@@ -72,6 +73,7 @@ class SshFragment : Fragment(R.layout.fragment_ssh) {
         viewStatusDot = view.findViewById(R.id.viewStatusDot)
         imgStatusCheck = view.findViewById(R.id.imgStatusCheck)
         txtStatusText = view.findViewById(R.id.txtStatusText)
+        viewConnectPulseRing = view.findViewById(R.id.viewConnectPulseRing)
         txtServerValue = view.findViewById(R.id.txtServerValue)
         txtProtocolValue = view.findViewById(R.id.txtProtocolValue)
         txtPortValue = view.findViewById(R.id.txtPortValue)
