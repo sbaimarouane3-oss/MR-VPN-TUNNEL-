@@ -45,6 +45,18 @@ android {
         }
     }
 
+    // كل APK كيتبنى بمعمارية وحدة غير (armeabi-v7a أو arm64-v8a) بدل ما
+    // تكون الجوج فـ نفس الملف - هادشي كيقسم حجم native libs (Xray-core +
+    // hev-socks5-tunnel) بالنصف تقريبًا لكل مستخدم.
+    splits {
+        abi {
+            enable true
+            reset()
+            include "armeabi-v7a", "arm64-v8a"
+            universalApk true  // كيبني تاني نسخة "universal" فيها الجوج، لمن بغيتي APK وحدة تخدم فـ كل جهاز
+        }
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
