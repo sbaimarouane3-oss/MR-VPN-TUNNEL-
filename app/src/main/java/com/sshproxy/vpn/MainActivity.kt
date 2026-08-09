@@ -1,16 +1,20 @@
 package com.sshproxy.vpn
 
+import android.animation.ValueAnimator
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.res.ColorStateList
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import android.view.View
+import android.view.animation.LinearInterpolator
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
+import com.google.android.material.button.MaterialButton
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -52,6 +56,10 @@ class MainActivity : AppCompatActivity() {
     // true ملي VPN كيعاود الاتصال تلقائيا (تبديل شبكة / انقطاع مؤقت)
     // بلا ما المستخدم يحتاج يدوس شي حاجة — كنبينوها فالزر بحال HTTP Custom.
     private var reconnectingUi = false
+    // true غير وقت STATE_FAILED / STATE_WAITING_USER_ACTION - باش الزر
+    // الدائري يبين أحمر بدل الرمادي العادي ديال DISCONNECTED. كيتصفى
+    // (false) فأول CONNECTING جديدة أو DISCONNECT يدوي.
+    private var failedUi = false
 
     private var sshFragment: SshFragment? = null
     private var logFragment: LogFragment? = null
@@ -61,6 +69,12 @@ class MainActivity : AppCompatActivity() {
     private var lastLogContent = ""
     private var activeImportedConfig: ImportedConfig? = null
     private var activeXrayConfig: ParsedProxyConfig? = null
+
+    // Animator ديال النبض (pulse) حول الزر الدائري - واحد فقط، ماكيتبداش
+    // من جديد كل مرة UI كترفرش (applyConnectButtonState كيتصاوب فوقها
+    // بزاف)، غير ملي الحالة تبدل فعليا (بحال connecting/reconnecting).
+    private var pulseAnimator: ValueAnimator? = null
+    private var lastButtonVisualState: String? = null
 
     private val vpnPrepareLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -90,16 +104,19 @@ class MainActivity : AppCompatActivity() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.getStringExtra(SshVpnService.EXTRA_STATE)) {
                 SshVpnService.STATE_CONNECTING -> {
-                    connecting = true; connected = false; reconnectingUi = false
+                    connecting = true; connected = false; reconnectingUi = false; failedUi = false
                 }
                 SshVpnService.STATE_READY -> {
-                    connecting = false; connected = true; reconnectingUi = false
+                    connecting = false; connected = true; reconnectingUi = false; failedUi = false
                 }
                 SshVpnService.STATE_RECONNECTING, SshVpnService.STATE_WAITING_NETWORK -> {
-                    reconnectingUi = true
+                    reconnectingUi = true; failedUi = false
                 }
-                SshVpnService.STATE_DISCONNECTED, SshVpnService.STATE_FAILED, SshVpnService.STATE_WAITING_USER_ACTION -> {
-                    connecting = false; connected = false; reconnectingUi = false
+                SshVpnService.STATE_DISCONNECTED -> {
+                    connecting = false; connected = false; reconnectingUi = false; failedUi = false
+                }
+                SshVpnService.STATE_FAILED, SshVpnService.STATE_WAITING_USER_ACTION -> {
+                    connecting = false; connected = false; reconnectingUi = false; failedUi = true
                 }
             }
             applyConnectButtonState()
@@ -617,11 +634,14 @@ class MainActivity : AppCompatActivity() {
     private fun applyConnectButtonState() {
         val f = sshFragment ?: return
         f.btnConnect.isEnabled = true
-        f.btnConnect.text = when {
-            connecting -> "CONNECTING..."
-            reconnectingUi -> "RECONNECTING..."
-            connected -> "DISCONNECT"
-            else -> "CONNECT"
+        // الزر دابا دائري بلا نص (Icon بوحدو) - النص القديم
+        // (CONNECT/CONNECTING.../DISCONNECT) بقا كـcontentDescription
+        // فقط للـaccessibility، ماشي ظاهر فالتصميم.
+        f.btnConnect.contentDescription = when {
+            connecting -> "Connecting"
+            reconnectingUi -> "Reconnecting"
+            connected -> "Disconnect"
+            else -> "Connect"
         }
 
         // ===== واجهة جديدة فقط (status dot / checkmark / cards) - عرض =====
@@ -631,23 +651,90 @@ class MainActivity : AppCompatActivity() {
             connecting -> "CONNECTING..."
             reconnectingUi -> "RECONNECTING..."
             connected -> "CONNECTED"
+            failedUi -> "CONNECTION FAILED"
             else -> "DISCONNECTED"
         }
-        val statusColor = when {
-            connecting || reconnectingUi -> android.graphics.Color.parseColor("#FFA726")
-            connected -> android.graphics.Color.parseColor("#1DB954")
-            else -> android.graphics.Color.parseColor("#5C6672")
+        val statusColorRes = when {
+            connecting || reconnectingUi -> R.color.state_connecting
+            connected -> R.color.state_success
+            failedUi -> R.color.state_error
+            else -> R.color.state_idle
         }
+        val statusColor = androidx.core.content.ContextCompat.getColor(this, statusColorRes)
         f.txtStatusText.text = statusLabel
         f.txtStatusText.setTextColor(statusColor)
         f.txtStatusCardValue.text = statusLabel.lowercase()
             .replaceFirstChar { it.uppercase() }
         f.txtStatusCardValue.setTextColor(statusColor)
-        f.viewStatusDot.backgroundTintList = android.content.res.ColorStateList.valueOf(statusColor)
+        f.viewStatusDot.backgroundTintList = ColorStateList.valueOf(statusColor)
         f.viewStatusDot.visibility = if (connected) View.GONE else View.VISIBLE
         f.imgStatusCheck.visibility = if (connected) View.VISIBLE else View.GONE
 
+        updateConnectButtonVisual(statusColorRes)
         updateConnectionSummary()
+    }
+
+    /**
+     * كيلون الزر الدائري حسب الحالة، وكيتحكم فـ pulse ring حوليه:
+     * - Connecting/Reconnecting: لون برتقالي + نبض خفيف (animator وحيد،
+     *   ماكيتبداش من جديد إلا كانت الحالة السابقة ماشي نفسها).
+     * - Connected: أخضر، بلا نبض مستمر (fade-in وحيد وقت الدخول للحالة).
+     * - Failed: أحمر، بلا animation.
+     * - Disconnected: رمادي.
+     */
+    private fun updateConnectButtonVisual(statusColorRes: Int) {
+        val f = sshFragment ?: return
+        val button = f.btnConnect as? MaterialButton ?: return
+        val ring = f.viewConnectPulseRing
+
+        val visualState = when {
+            connecting -> "CONNECTING"
+            reconnectingUi -> "RECONNECTING"
+            connected -> "CONNECTED"
+            failedUi -> "FAILED"
+            else -> "IDLE"
+        }
+        if (visualState == lastButtonVisualState) return
+        lastButtonVisualState = visualState
+
+        val color = androidx.core.content.ContextCompat.getColor(this, statusColorRes)
+        button.backgroundTintList = ColorStateList.valueOf(color)
+
+        val isPulsing = visualState == "CONNECTING" || visualState == "RECONNECTING"
+        if (isPulsing) {
+            ring.backgroundTintList = ColorStateList.valueOf(color)
+            ring.visibility = View.VISIBLE
+            if (pulseAnimator == null) {
+                pulseAnimator = ValueAnimator.ofFloat(0.55f, 1f, 0.55f).apply {
+                    duration = 1400
+                    repeatCount = ValueAnimator.INFINITE
+                    interpolator = LinearInterpolator()
+                    addUpdateListener { anim ->
+                        val v = anim.animatedValue as Float
+                        ring.alpha = v
+                        val scale = 0.9f + (1f - v) * 0.25f
+                        ring.scaleX = scale
+                        ring.scaleY = scale
+                    }
+                    start()
+                }
+            }
+        } else {
+            pulseAnimator?.cancel()
+            pulseAnimator = null
+            ring.visibility = View.INVISIBLE
+            ring.alpha = 1f
+            ring.scaleX = 1f
+            ring.scaleY = 1f
+
+            if (visualState == "CONNECTED") {
+                // نبضة واحدة خفيفة وقت الوصول لـCONNECTED فقط - ماشي متكررة.
+                button.animate().cancel()
+                button.scaleX = 0.9f
+                button.scaleY = 0.9f
+                button.animate().scaleX(1f).scaleY(1f).setDuration(220).start()
+            }
+        }
     }
 
     /**
@@ -781,8 +868,11 @@ class MainActivity : AppCompatActivity() {
                 connecting = true
                 connected = false
                 reconnectingUi = false
+                failedUi = false
                 applyConnectButtonState()
-                appendLog("Starting Service...")
+                // "Starting Service..." كيتسجل من SshVpnService نفسها
+                // (onStartCommand) - ماكنسجلوهش هنا زيادة باش مايتكررش
+                // نفس السطر جوج مرات فـ log واحد.
                 return
             }
             // ===== نهاية V2Ray/Xray - كود SSH الأصلي كيبدا هنا بلا تبديل =====
@@ -841,8 +931,10 @@ class MainActivity : AppCompatActivity() {
             connecting = true
             connected = false
             reconnectingUi = false
+            failedUi = false
             applyConnectButtonState()
-            appendLog("Starting Service...")
+            // نفس الشيء هنا: السطر "Starting Service..." كيجي من الـservice
+            // ماشي من الواجهة، باش يبان مرة وحدة بوحدة فـ log لكل محاولة حقيقية.
         } catch (e: Throwable) {
             appendLog("ERROR: Invalid Configuration.")
         }
@@ -896,6 +988,8 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         try { unregisterReceiver(logReceiver) } catch (_: Throwable) { }
         try { unregisterReceiver(statusReceiver) } catch (_: Throwable) { }
+        pulseAnimator?.cancel()
+        pulseAnimator = null
         super.onDestroy()
     }
 }
