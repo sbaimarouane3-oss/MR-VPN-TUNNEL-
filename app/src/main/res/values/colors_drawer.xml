@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- أسود قريب من خلفية التطبيق (#000000) باش يبقى القائمة متناسقة مع
+         باقي التطبيق (شاشة SSH/Log السوداء) بدل البنفسجي الصارخ. -->
+    <color name="drawer_background">#0D0D0D</color>
+    <color name="drawer_text">#FFFFFF</color>
+    <!-- نفس الأخضر المستعمل فزر CONNECT ومؤشر الـ Tabs، باش يبقى فيه
+         خيط لوني موحد فكامل التطبيق. -->
+    <color name="drawer_accent">#1DB954</color>
+</resources>

@@ -1,0 +1,250 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <!-- الحقول اليدوية: كتختفي كاملة إلا كان فيه كونفيغ مستورد نشط -->
+        <LinearLayout
+            android:id="@+id/manualFieldsContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="SSH Host:Port"
+                android:textColor="#AAAAAA"
+                android:textSize="12sp" />
+            <EditText
+                android:id="@+id/edtHost"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="example.com:443"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#666666"
+                android:inputType="text" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Username"
+                android:textColor="#AAAAAA"
+                android:textSize="12sp"
+                android:layout_marginTop="12dp" />
+            <EditText
+                android:id="@+id/edtUser"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="user"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#666666"
+                android:inputType="text" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Password"
+                android:textColor="#AAAAAA"
+                android:textSize="12sp"
+                android:layout_marginTop="12dp" />
+            <EditText
+                android:id="@+id/edtPass"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="pass"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#666666"
+                android:inputType="textPassword" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="12dp">
+
+                <CheckBox
+                    android:id="@+id/chkUsePayload"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Use Payload"
+                    android:textColor="#FFFFFF"
+                    android:checked="true" />
+
+                <!-- بروتوكول SSH-SSL: كتلف التواصل بـ TLS قبل ما يبدا SSH handshake،
+                     بحال SSL checkbox فـ HTTP Custom / NPV Tunnel. -->
+                <CheckBox
+                    android:id="@+id/chkUseSsl"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="SSL"
+                    android:textColor="#FFFFFF"
+                    android:checked="false" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="4dp">
+
+                <!-- UDPGW: كيمرر ترافيك UDP (بحال مكالمات الصوت/الفيديو) عبر
+                     badvpn-udpgw خدام عالسيرفر البعيد، حيت SSH وSOCKS5 المحلي
+                     عندنا كيدعموا TCP بوحدو. -->
+                <CheckBox
+                    android:id="@+id/chkUdpgw"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="UDP (UDPGW)"
+                    android:textColor="#FFFFFF"
+                    android:checked="false" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Udpgw Port"
+                android:textColor="#AAAAAA"
+                android:textSize="12sp"
+                android:layout_marginTop="4dp" />
+            <EditText
+                android:id="@+id/edtUdpgwPort"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="e.g. 7300"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#666666"
+                android:inputType="number" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="SNI (SSL only)"
+                android:textColor="#AAAAAA"
+                android:textSize="12sp"
+                android:layout_marginTop="8dp" />
+            <EditText
+                android:id="@+id/edtSni"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="e.g. google.com (leave blank to use host)"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#666666"
+                android:inputType="text" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Payload"
+                android:textColor="#AAAAAA"
+                android:textSize="12sp"
+                android:layout_marginTop="8dp" />
+            <EditText
+                android:id="@+id/edtPayload"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minLines="3"
+                android:gravity="top"
+                android:hint="GET / HTTP/1.1[crlf]Host: [host][crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf][crlf]"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#666666"
+                android:inputType="textMultiLine" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Remote Proxy (ip:port)"
+                android:textColor="#AAAAAA"
+                android:textSize="12sp"
+                android:layout_marginTop="12dp" />
+            <EditText
+                android:id="@+id/edtProxy"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="proxy.host.com:80"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#666666"
+                android:inputType="text" />
+
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btnConnect"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:backgroundTint="#1DB954"
+            android:text="CONNECT"
+            android:textColor="#000000"
+            android:textStyle="bold" />
+
+        <!-- زر Add: دابا مكرر مع "Add" لي فالقائمة الجانبية، مخبي هنا
+             بلا ما نحيدو الـ id (باش الكود ديال الكوتلن يبقى خدام بلا
+             تبديل). -->
+        <Button
+            android:id="@+id/btnImportConfig"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:backgroundTint="#2A2E37"
+            android:text="Add"
+            android:textColor="#FFFFFF"
+            android:drawableStart="@drawable/ic_add"
+            android:drawableTint="#FFFFFF"
+            android:drawablePadding="8dp"
+            android:gravity="center"
+            android:layout_marginTop="16dp"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/btnShareLog"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:backgroundTint="#333333"
+            android:text="SHARE LOG"
+            android:textColor="#FFFFFF"
+            android:visibility="gone" />
+
+        <!-- حالة الكونفيغ المستورد (إلا كان موجود) + زر الاستيراد -->
+        <LinearLayout
+            android:id="@+id/importedStatusContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#1A2A1F"
+            android:padding="12dp"
+            android:layout_marginTop="16dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/txtImportedStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="#1DB954"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:text="" />
+
+            <Button
+                android:id="@+id/btnRemoveImported"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@android:color/transparent"
+                android:text="REMOVE IMPORTED CONFIG"
+                android:textColor="#FF6B6B"
+                android:textSize="12sp"
+                android:layout_marginTop="4dp"
+                android:paddingStart="0dp" />
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.drawerlayout.widget.DrawerLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/drawerLayout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:openDrawer="start">
+
+    <!-- المحتوى الرئيسي (Tabs + ViewPager) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:background="#000000">
+
+        <!-- شريط صغير فيه زر القائمة (☰) — كيفتح القائمة الجانبية بالضغط،
+             بالإضافة للسحب من طرف الشاشة -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="#000000"
+            android:paddingStart="4dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp">
+
+            <ImageButton
+                android:id="@+id/btnMenu"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_menu"
+                android:contentDescription="Menu"
+                android:padding="10dp" />
+
+        </LinearLayout>
+
+        <com.google.android.material.tabs.TabLayout
+            android:id="@+id/tabLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="#000000"
+            app:tabIndicatorColor="#1DB954"
+            app:tabSelectedTextColor="#FFFFFF"
+            app:tabTextColor="#888888" />
+
+        <androidx.viewpager2.widget.ViewPager2
+            android:id="@+id/viewPager"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="#000000" />
+
+    </LinearLayout>
+
+    <!-- القائمة الجانبية: كتنفتح بالسحب من طرف الشاشة (سلوك افتراضي ديال
+         DrawerLayout مع NavigationView بـ layout_gravity="start") -->
+    <com.google.android.material.navigation.NavigationView
+        android:id="@+id/navigationView"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:layout_gravity="start"
+        android:background="@color/drawer_background"
+        app:itemIconTint="@null"
+        app:itemTextColor="@color/drawer_text"
+        app:itemIconPadding="24dp"
+        app:itemRippleColor="@color/drawer_item_ripple"
+        app:menu="@menu/drawer_menu" />
+
+</androidx.drawerlayout.widget.DrawerLayout>

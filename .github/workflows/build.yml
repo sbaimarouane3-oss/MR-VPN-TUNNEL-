@@ -1,0 +1,88 @@
+name: Build
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK
+        run: sdkmanager --install "ndk;27.2.12479018"
+
+      # ===== Xray-core (libv2ray.aar) =====
+      # ماكاينش Xray-core كـ Maven dependency جاهز، فكيتبنى مرة وحدة هنا
+      # بـgomobile من AndroidLibXrayLite (نفس الطريقة المستعملة فـv2rayNG)
+      # وكيتخزن كـ cache باش مايتبناش من جديد فكل build.
+      - name: Cache libv2ray.aar
+        id: cache-libv2ray
+        uses: actions/cache@v4
+        with:
+          path: app/libs/libv2ray.aar
+          key: libv2ray-aar-v1
+
+      - name: Set up Go
+        if: steps.cache-libv2ray.outputs.cache-hit != 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build libv2ray.aar with gomobile
+        if: steps.cache-libv2ray.outputs.cache-hit != 'true'
+        run: |
+          set -e
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          go install golang.org/x/mobile/cmd/gobind@latest
+          export PATH=$PATH:$(go env GOPATH)/bin
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
+          gomobile init
+
+          git clone --depth 1 https://github.com/2dust/AndroidLibXrayLite.git /tmp/AndroidLibXrayLite
+          cd /tmp/AndroidLibXrayLite
+          go mod tidy -v
+          gomobile bind -v -androidapi 24 -trimpath \
+            -ldflags='-s -w -buildid= -checklinkname=0' \
+            -o libv2ray.aar \
+            ./
+
+          mkdir -p "$GITHUB_WORKSPACE/app/libs"
+          cp libv2ray.aar "$GITHUB_WORKSPACE/app/libs/libv2ray.aar"
+
+      - name: Verify libv2ray.aar present
+        run: ls -la app/libs/libv2ray.aar
+
+      # ملاحظة: المشروع ماعندوش سكريبت gradlew (gradle/wrapper/ فيه غير
+      # gradle-wrapper.properties)، فكنستعملو setup-gradle باش يجيب نفس
+      # نسخة Gradle (8.7) المحددة فـ gradle-wrapper.properties ويخدمها
+      # مباشرة، بلا حاجة لـ ./gradlew.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+
+      - name: Build Debug APK
+        run: gradle assembleDebug --stacktrace
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: app/build/outputs/apk/debug/*.apk

@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.SshProxyPayload" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#1DB954</item>
+        <item name="colorPrimaryDark">#0F1115</item>
+        <item name="colorAccent">#1DB954</item>
+        <item name="android:windowBackground">#0F1115</item>
+    </style>
+</resources>

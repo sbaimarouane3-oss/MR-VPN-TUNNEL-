@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/nav_add"
+        android:icon="@drawable/ic_add"
+        android:title="Add" />
+
+    <item
+        android:id="@+id/nav_telegram"
+        android:icon="@drawable/ic_telegram"
+        android:title="Telegram" />
+
+    <item
+        android:id="@+id/nav_whatsapp"
+        android:icon="@drawable/ic_whatsapp"
+        android:title="WhatsApp" />
+
+    <item
+        android:id="@+id/nav_sharelog"
+        android:icon="@drawable/ic_share"
+        android:title="Share Log" />
+
+</menu>

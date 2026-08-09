@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Rounded box with a green stroke for the Import Code text field, matching
+    the Falcon Tunnel "Add Server" look (cyan box) but in the app's own
+    green accent color (#1DB954).
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#0D1F14" />
+    <stroke
+        android:width="2dp"
+        android:color="#1DB954" />
+    <corners android:radius="10dp" />
+    <padding
+        android:left="12dp"
+        android:top="10dp"
+        android:right="12dp"
+        android:bottom="10dp" />
+</shape>
