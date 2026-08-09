@@ -114,6 +114,13 @@ class SshVpnService : VpnService() {
     @Volatile private var mode: String = MODE_SSH
     private var lastXrayParsedJson: String = ""
 
+    // تاگ الجلسة الحالية (SSH-DIRECT / SSH-PROXY / SSH-PAYLOAD /
+    // SSH-PROXY-PAYLOAD / SSH-TLS-PAYLOAD... / XRAY) - كيتحدد مرة وحدة فـ
+    // onStartCommand() قبل ما يبدا أي log، وكل الأسطر التابعة لنفس الجلسة
+    // (بما فيهم reconnect/tryResumeSession) كتستعمل نفس التاگ. هادشي كيمنع
+    // اختلاط logs ديال SSH-PROXY مع SSH-PROXY-PAYLOAD فنفس الشاشة.
+    @Volatile private var logTag: String = ""
+
     // Last successful connection parameters, kept in memory only, so we can
     // reconnect automatically (like HTTP Custom) when the network drops and
     // comes back, without the user tapping CONNECT again. The TUN interface
@@ -249,6 +256,7 @@ class SshVpnService : VpnService() {
                 return START_NOT_STICKY
             }
             lastXrayParsedJson = parsedJson
+            logTag = "XRAY"
 
             log("Starting Service...")
             broadcastStatus(STATE_CONNECTING)
@@ -307,6 +315,17 @@ class SshVpnService : VpnService() {
         val udpgwEnabled = intent.getBooleanExtra("udpgwEnabled", false)
         val udpgwPort = intent.getIntExtra("udpgwPort", 7300)
         val maskLogs = intent.getBooleanExtra("maskLogs", false)
+
+        // تحديد تاگ الجلسة قبل أي log - بحال طلب المستخدم (نقطة 7): SSH-PROXY
+        // وSSH-PROXY-PAYLOAD ماخصهمش يختلطو. نفس الحساب لي كان قبل فـ connect()
+        // (protocolLabel) - غير أننا كنديروه هنا بكري باش يغطي حتى "Starting
+        // Service..." و"Preparing VPN Engine..." لي كيجيو قبل connect().
+        val usesProxyForTag = proxyHost.isNotBlank() && (proxyHost != host || proxyPort != port)
+        logTag = StringBuilder("SSH").apply {
+            if (useSsl) append("-TLS")
+            if (usesProxyForTag) append("-PROXY")
+            if (usePayload) append("-PAYLOAD")
+        }.toString().let { if (it == "SSH") "SSH-DIRECT" else it }
 
         log("Starting Service...")
         broadcastStatus(STATE_CONNECTING)
@@ -1160,10 +1179,11 @@ class SshVpnService : VpnService() {
     }
 
     private fun log(msg: String) {
-        FileLogger.append(applicationContext, msg)
+        val tagged = if (logTag.isNotEmpty()) "[$logTag] $msg" else msg
+        FileLogger.append(applicationContext, tagged)
         try {
             val i = Intent(ACTION_LOG)
-            i.putExtra(EXTRA_LOG_MESSAGE, msg)
+            i.putExtra(EXTRA_LOG_MESSAGE, tagged)
             sendBroadcast(i)
         } catch (_: Throwable) { }
     }
