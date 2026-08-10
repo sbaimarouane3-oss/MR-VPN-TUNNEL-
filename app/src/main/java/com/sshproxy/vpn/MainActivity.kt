@@ -49,6 +49,38 @@ import java.io.File
  * مركزي، والفراگمنتات كتسجل الـ views ديالها عبر onSshFragmentReady /
  * onLogFragmentReady.
  */
+/**
+ * تعريف كل بروتوكول قابل للاختيار من "Choose Protocol": الاسم اللي
+ * كيبان فالـdialog وفـ Protocol row، والأعلام اللي كيتبناو عليهم
+ * الحقول اللي كتبان (useSsl->SNI, usePayload->Payload, useProxy->
+ * Remote Proxy). isXtra كيوجه startVpnService لمسار Xray (VLESS)
+ * اليدوي بدل المسار العادي ديال SSH.
+ */
+private data class ProtocolOption(
+    val label: String,
+    val usePayload: Boolean,
+    val useSsl: Boolean,
+    val useProxy: Boolean,
+    val isXtra: Boolean = false
+)
+
+private val PROTOCOL_OPTIONS = listOf(
+    ProtocolOption("SSH-Direct", usePayload = false, useSsl = false, useProxy = false),
+    ProtocolOption("SSH-Proxy", usePayload = false, useSsl = false, useProxy = true),
+    ProtocolOption("SSH-Payload", usePayload = true, useSsl = false, useProxy = false),
+    ProtocolOption("SSH-Proxy-Payload", usePayload = true, useSsl = false, useProxy = true),
+    ProtocolOption("SSH-TLS", usePayload = false, useSsl = true, useProxy = false),
+    ProtocolOption("SSH-TLS-Proxy", usePayload = false, useSsl = true, useProxy = true),
+    ProtocolOption("SSH-TLS-Payload", usePayload = true, useSsl = true, useProxy = false),
+    ProtocolOption("SSH-TLS-Proxy-Payload", usePayload = true, useSsl = true, useProxy = true),
+    // XTRA: يدوي لـ VLESS+TCP (+TLS إلا تعمرت SNI) - نفس حقول SSH-TLS
+    // بالضبط (Host:Port, Username/UUID, Password, SNI)، بلا Payload
+    // وبلا Proxy. ماشي عبر Import - القيم كتبنى مباشرة فـstartVpnService.
+    ProtocolOption("XTRA", usePayload = false, useSsl = true, useProxy = false, isXtra = true)
+)
+
+private val DEFAULT_PROTOCOL = PROTOCOL_OPTIONS[0]
+
 class MainActivity : AppCompatActivity() {
 
     private var connected = false
@@ -380,11 +412,25 @@ class MainActivity : AppCompatActivity() {
         f.edtPass.setText(p.getString("pass", ""))
         f.edtProxy.setText(p.getString("proxy", ""))
         if (p.contains("payload")) f.edtPayload.setText(p.getString("payload", ""))
-        f.chkUsePayload.isChecked = p.getBoolean("usePayload", true)
-        f.chkUseSsl.isChecked = p.getBoolean("useSsl", false)
+        val opt = PROTOCOL_OPTIONS.find { it.label == p.getString("protocol", DEFAULT_PROTOCOL.label) }
+            ?: DEFAULT_PROTOCOL
+        f.chkUsePayload.isChecked = p.getBoolean("usePayload", opt.usePayload)
+        f.chkUseSsl.isChecked = p.getBoolean("useSsl", opt.useSsl)
         f.edtSni.setText(p.getString("sni", ""))
         f.chkUdpgw.isChecked = p.getBoolean("udpgwEnabled", false)
         f.edtUdpgwPort.setText(p.getString("udpgwPort", "7300"))
+        applyProtocolFieldVisibility(f, opt)
+    }
+
+    /**
+     * كتبين/كتخبي غير الحقول اللي عندها علاقة بالبروتوكول المختار:
+     * SNI (SSH-TLS*/XTRA)، Payload (*-Payload)، Remote Proxy (*-Proxy).
+     * Host/User/Pass كيبقاو بانين دايما مهما كان البروتوكول.
+     */
+    private fun applyProtocolFieldVisibility(f: SshFragment, opt: ProtocolOption) {
+        f.sniSection.visibility = if (opt.useSsl) View.VISIBLE else View.GONE
+        f.payloadSection.visibility = if (opt.usePayload) View.VISIBLE else View.GONE
+        f.proxySection.visibility = if (opt.useProxy) View.VISIBLE else View.GONE
     }
 
     private fun wireManualFieldPersistence() {
@@ -421,36 +467,20 @@ class MainActivity : AppCompatActivity() {
      * عليهم تلقائيا) - بلا أي تعديل فمنطق البارس أو الاتصال.
      */
     private fun showProtocolPicker() {
-        val options = arrayOf(
-            "SSH-Direct",
-            "SSH-Payload",
-            "SSH-SSL",
-            "SSH-SSL-Payload",
-            "VLESS",
-            "VMess",
-            "Trojan",
-            "Shadowsocks",
-            "Paste Xray JSON Config"
-        )
+        val options = PROTOCOL_OPTIONS.map { it.label }.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle("Choose Protocol")
             .setItems(options) { _, which ->
-                when (which) {
-                    0 -> switchToManualSsh(usePayload = false, useSsl = false)
-                    1 -> switchToManualSsh(usePayload = true, useSsl = false)
-                    2 -> switchToManualSsh(usePayload = false, useSsl = true)
-                    3 -> switchToManualSsh(usePayload = true, useSsl = true)
-                    else -> showImportDialog()
-                }
+                switchToManualProtocol(PROTOCOL_OPTIONS[which])
             }
             .show()
     }
 
-    /** كيرجع لوضع الحقول اليدوية ديال SSH، وكيعمر Payload/SSL تلقائيا
-     *  حسب البروتوكول لي ختار المستخدم من القائمة - بلا ما يحتاج يدوس
-     *  على checkbox بيدو (الـcheckboxes بقاو خدامين فالكود، غير مخبيين
-     *  من الواجهة، حيت بزاف من الكود التاني كيقرا منهم isChecked مباشرة). */
-    private fun switchToManualSsh(usePayload: Boolean, useSsl: Boolean) {
+    /** كيرجع لوضع الحقول اليدوية (SSH أو XTRA)، وكيعمر usePayload/useSsl/
+     *  useProxy ويبين/يخبي الحقول تلقائيا حسب البروتوكول لي ختار
+     *  المستخدم من "Choose Protocol" - بلا ما يحتاج يدوس على أي checkbox
+     *  بيدو (الـcheckboxes بقاو خدامين فالكود، غير مخبيين من الواجهة). */
+    private fun switchToManualProtocol(opt: ProtocolOption) {
         if (activeImportedConfig != null || activeXrayConfig != null) {
             SecureConfigStore.clear(applicationContext)
             activeImportedConfig = null
@@ -459,12 +489,15 @@ class MainActivity : AppCompatActivity() {
         }
         val f = sshFragment
         if (f != null) {
-            f.chkUsePayload.isChecked = usePayload
-            f.chkUseSsl.isChecked = useSsl
+            f.chkUsePayload.isChecked = opt.usePayload
+            f.chkUseSsl.isChecked = opt.useSsl
             manualFieldsPrefs().edit()
-                .putBoolean("usePayload", usePayload)
-                .putBoolean("useSsl", useSsl)
+                .putString("protocol", opt.label)
+                .putBoolean("usePayload", opt.usePayload)
+                .putBoolean("useSsl", opt.useSsl)
+                .putBoolean("useProxy", opt.useProxy)
                 .apply()
+            applyProtocolFieldVisibility(f, opt)
         }
         updateImportUiState()
         updateConnectionSummary()
@@ -830,24 +863,11 @@ class MainActivity : AppCompatActivity() {
                 port = if (hostPort.contains(":")) hostPort.substringAfterLast(":") else "—"
                 server = if (host.isBlank()) "—" else maskForDisplay(host)
 
-                // نفس الحساب بالضبط لي كايستعملو SshVpnService (logTag) وImportedConfig.protocolLabel() -
-                // قبل كان هادشي ناقص هنا، فكان الكارد كيبين "SSH-Payload" بينما
-                // اللوگ الحقيقي كيبين "SSH-Proxy-Payload" (Remote Proxy معمر
-                // ومختلف عن SSH Host). دابا التلاتة كيتفقو.
-                val portNum = port.toIntOrNull() ?: 443
-                val proxyText = f.edtProxy.text?.toString()?.trim().orEmpty()
-                val proxyHost = if (proxyText.contains(":")) proxyText.substringBeforeLast(":") else host
-                val proxyPort = if (proxyText.contains(":")) {
-                    proxyText.substringAfterLast(":").toIntOrNull() ?: portNum
-                } else portNum
-                val usesProxy = proxyHost.isNotBlank() && (proxyHost != host || proxyPort != portNum)
-
-                protocol = buildString {
-                    append("SSH")
-                    if (f.chkUseSsl.isChecked) append("-TLS")
-                    if (usesProxy) append("-Proxy")
-                    if (f.chkUsePayload.isChecked) append("-Payload")
-                }.let { if (it == "SSH") "SSH-Direct" else it }
+                // البروتوكول كيتقرا مباشرة من الاختيار المخزن (Choose Protocol)
+                // بدل ما يتبنى من محتوى الحقول - كيضمن توافق تام بين الكارد
+                // وبين الحقول المبينة فعليا فالواجهة.
+                protocol = manualFieldsPrefs().getString("protocol", DEFAULT_PROTOCOL.label)
+                    ?: DEFAULT_PROTOCOL.label
             }
         }
 
@@ -952,6 +972,9 @@ class MainActivity : AppCompatActivity() {
             }
             // ===== نهاية V2Ray/Xray - كود SSH الأصلي كيبدا هنا بلا تبديل =====
 
+            val manualProtocol = manualFieldsPrefs().getString("protocol", DEFAULT_PROTOCOL.label)
+                ?: DEFAULT_PROTOCOL.label
+
             if (imported != null) {
                 intent.putExtra("host", imported.host)
                 intent.putExtra("port", imported.port)
@@ -966,13 +989,52 @@ class MainActivity : AppCompatActivity() {
                 intent.putExtra("udpgwEnabled", imported.udpgwEnabled)
                 intent.putExtra("udpgwPort", imported.udpgwPort)
                 intent.putExtra("maskLogs", true)
+            } else if (manualProtocol == "XTRA") {
+                // ===== XTRA - VLESS يدوي مبني مباشرة من نفس حقول SSH-TLS =====
+                // (Host:Port, Username->UUID, SNI). TLS كيتفعل تلقائيا إلا
+                // تعمرت SNI. بلا Import، بلا مساس بمسار SSH تحت.
+                val hostPort = f?.edtHost?.text?.toString()?.trim() ?: ""
+                val host = hostPort.substringBeforeLast(":")
+                val port = hostPort.substringAfterLast(":").toIntOrNull() ?: 443
+                val id = f?.edtUser?.text?.toString()?.trim() ?: ""
+                val sni = f?.edtSni?.text?.toString()?.trim() ?: ""
+
+                val cfg = ParsedProxyConfig(
+                    protocol = ParsedProxyConfig.ProxyProtocol.VLESS,
+                    remark = "XTRA",
+                    address = host,
+                    port = port,
+                    id = id,
+                    encryption = "none",
+                    network = "tcp",
+                    security = if (sni.isNotBlank()) "tls" else "none",
+                    sni = sni
+                )
+
+                intent.putExtra(SshVpnService.EXTRA_MODE, SshVpnService.MODE_XRAY)
+                intent.putExtra(SshVpnService.EXTRA_XRAY_CONFIG, cfg.toJson())
+
+                StateStore.write(applicationContext, SshVpnService.STATE_CONNECTING)
+                startService(intent)
+                connecting = true
+                connected = false
+                reconnectingUi = false
+                failedUi = false
+                applyConnectButtonState()
+                return
             } else {
                 val hostPort = f?.edtHost?.text?.toString()?.trim() ?: ""
                 val host = hostPort.substringBeforeLast(":")
                 val port = hostPort.substringAfterLast(":").toIntOrNull() ?: 443
+                // useProxy كيتقرا من الاختيار المخزن ديال Choose Protocol -
+                // ماشي بالتخمين من محتوى الحقل، حيت الحقل يمكن يبقى فيه
+                // نص قديم مخبي (SSH-Direct/Payload/TLS) وماخصوش يتقرا.
+                val useProxy = manualFieldsPrefs().getBoolean("useProxy", false)
                 val proxyText = f?.edtProxy?.text?.toString()?.trim() ?: ""
-                val proxyHost = if (proxyText.contains(":")) proxyText.substringBeforeLast(":") else host
-                val proxyPort = if (proxyText.contains(":")) {
+                val proxyHost = if (useProxy && proxyText.contains(":")) {
+                    proxyText.substringBeforeLast(":")
+                } else host
+                val proxyPort = if (useProxy && proxyText.contains(":")) {
                     proxyText.substringAfterLast(":").toIntOrNull() ?: port
                 } else port
 
