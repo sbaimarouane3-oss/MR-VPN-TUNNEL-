@@ -260,58 +260,68 @@
                 android:orientation="vertical"
                 android:padding="18dp">
 
-                <!-- ملاحظة إصلاح: TextInputLayout قبل كان فيه hint، وEditText
-                     فالداخل عندو hint خاص بيه هو الآخر - هادشي عمدا مانتصحش
-                     بيه Material Components (كيسبب تداخل/ازدواجية فالـfloating
-                     label). دابا الـhint كاين مرة وحدة غير فـ TextInputLayout،
-                     والمثال (placeholder) تحول لـ helperText صغير تحت الحقل. -->
-                <com.google.android.material.textfield.TextInputLayout
-                    style="@style/ModernTextInputLayout"
+                <!-- سطاط حقول SSH الأساسية (Host/Username/Password) - مجمعين
+                     هنا فـ container واحد باش نقدرو نخبيوهم كلهم دفعة وحدة
+                     مع V2Ray/Shadowsocks بلا ما نمسو أي id قديم. -->
+                <LinearLayout
+                    android:id="@+id/sshCoreFieldsSection"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:hint="SSH Host:Port"
-                    app:helperText="e.g. example.com:443"
-                    app:helperTextEnabled="true">
+                    android:orientation="vertical">
 
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/edtHost"
+                    <!-- ملاحظة إصلاح: TextInputLayout قبل كان فيه hint، وEditText
+                         فالداخل عندو hint خاص بيه هو الآخر - هادشي عمدا مانتصحش
+                         بيه Material Components (كيسبب تداخل/ازدواجية فالـfloating
+                         label). دابا الـhint كاين مرة وحدة غير فـ TextInputLayout،
+                         والمثال (placeholder) تحول لـ helperText صغير تحت الحقل. -->
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/ModernTextInputLayout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:textColor="@color/text_primary"
-                        android:inputType="text" />
-                </com.google.android.material.textfield.TextInputLayout>
+                        android:hint="SSH Host:Port"
+                        app:helperText="e.g. example.com:443"
+                        app:helperTextEnabled="true">
 
-                <com.google.android.material.textfield.TextInputLayout
-                    style="@style/ModernTextInputLayout"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp"
-                    android:hint="Username">
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edtHost"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/text_primary"
+                            android:inputType="text" />
+                    </com.google.android.material.textfield.TextInputLayout>
 
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/edtUser"
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/ModernTextInputLayout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:textColor="@color/text_primary"
-                        android:inputType="text" />
-                </com.google.android.material.textfield.TextInputLayout>
+                        android:layout_marginTop="14dp"
+                        android:hint="Username">
 
-                <com.google.android.material.textfield.TextInputLayout
-                    style="@style/ModernTextInputLayout"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp"
-                    android:hint="Password"
-                    app:endIconMode="password_toggle"
-                    app:endIconTint="@color/accent_green">
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edtUser"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/text_primary"
+                            android:inputType="text" />
+                    </com.google.android.material.textfield.TextInputLayout>
 
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/edtPass"
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/ModernTextInputLayout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:textColor="@color/text_primary"
-                        android:inputType="textPassword" />
-                </com.google.android.material.textfield.TextInputLayout>
+                        android:layout_marginTop="14dp"
+                        android:hint="Password"
+                        app:endIconMode="password_toggle"
+                        app:endIconTint="@color/accent_green">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edtPass"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/text_primary"
+                            android:inputType="textPassword" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
 
                 <!-- Use Payload / SSL: بقاو خدامين فالكود (isChecked كيتقرا
                      منها وقت بناء الاتصال)، غير مخبيين من الواجهة بطلب
@@ -350,33 +360,41 @@
 
                 <!-- UDPGW: كيمرر ترافيك UDP (بحال مكالمات الصوت/الفيديو) عبر
                      badvpn-udpgw خدام عالسيرفر البعيد، حيت SSH وSOCKS5 المحلي
-                     عندنا كيدعموا TCP بوحدو. -->
-                <CheckBox
-                    android:id="@+id/chkUdpgw"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:text="UDP (UDPGW)"
-                    android:textColor="@color/text_primary"
-                    android:buttonTint="@color/accent_green"
-                    android:checked="false" />
-
-                <com.google.android.material.textfield.TextInputLayout
-                    style="@style/ModernTextInputLayout"
+                     عندنا كيدعموا TCP بوحدو. مجمع فـ container باش يتخبى
+                     كاملا مع V2Ray/Shadowsocks (ماشي متعلق بيهم). -->
+                <LinearLayout
+                    android:id="@+id/udpgwSection"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:hint="UDPGW Port"
-                    app:helperText="e.g. 7300"
-                    app:helperTextEnabled="true">
+                    android:orientation="vertical">
 
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/edtUdpgwPort"
+                    <CheckBox
+                        android:id="@+id/chkUdpgw"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="UDP (UDPGW)"
+                        android:textColor="@color/text_primary"
+                        android:buttonTint="@color/accent_green"
+                        android:checked="false" />
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/ModernTextInputLayout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:textColor="@color/text_primary"
-                        android:inputType="number" />
-                </com.google.android.material.textfield.TextInputLayout>
+                        android:layout_marginTop="10dp"
+                        android:hint="UDPGW Port"
+                        app:helperText="e.g. 7300"
+                        app:helperTextEnabled="true">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edtUdpgwPort"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/text_primary"
+                            android:inputType="number" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
 
                 <!-- SNI: تبان غير مع البروتوكولات اللي فيهم TLS (SSH-TLS*, XTRA) -->
                 <LinearLayout
@@ -474,6 +492,141 @@
                             android:textColor="@color/text_primary"
                             android:inputType="text" />
                     </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+
+                <!-- V2Ray/Xray: تبان غير ملي Protocol = V2Ray. حقل JSON
+                     كبير يقبل config كامل (inbounds/outbounds/policy...)،
+                     نفس ستايل كارد Payload لي فوق. -->
+                <LinearLayout
+                    android:id="@+id/v2raySection"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="V2Ray / Xray Config (JSON)"
+                        android:textColor="@color/text_muted"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.06"
+                        android:layout_marginTop="4dp"
+                        android:layout_marginBottom="8dp" />
+
+                    <FrameLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/shape_card_alt">
+
+                        <ScrollView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:maxHeight="320dp"
+                            android:scrollbars="vertical"
+                            android:fillViewport="false">
+
+                            <EditText
+                                android:id="@+id/edtV2rayJson"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:minLines="8"
+                                android:gravity="top|start"
+                                android:padding="14dp"
+                                android:background="@android:color/transparent"
+                                android:fontFamily="monospace"
+                                android:hint="{&#10;  &quot;inbounds&quot;: [],&#10;  &quot;outbounds&quot;: [ ... ]&#10;}"
+                                android:textColor="@color/text_primary"
+                                android:textColorHint="@color/text_muted"
+                                android:textSize="12sp"
+                                android:inputType="textMultiLine|textNoSuggestions" />
+                        </ScrollView>
+                    </FrameLayout>
+                </LinearLayout>
+
+                <!-- Shadowsocks: تبان غير ملي Protocol = Shadowsocks. -->
+                <LinearLayout
+                    android:id="@+id/shadowsocksSection"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/ModernTextInputLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:hint="Server"
+                        app:helperText="e.g. example.com"
+                        app:helperTextEnabled="true">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edtSsServer"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/text_primary"
+                            android:inputType="text" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/ModernTextInputLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:hint="Port">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edtSsPort"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/text_primary"
+                            android:inputType="number" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/ModernTextInputLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:hint="Method"
+                        app:helperText="e.g. aes-256-gcm"
+                        app:helperTextEnabled="true">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edtSsMethod"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/text_primary"
+                            android:inputType="text" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/ModernTextInputLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:hint="Password"
+                        app:endIconMode="password_toggle"
+                        app:endIconTint="@color/accent_green">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edtSsPassword"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/text_primary"
+                            android:inputType="textPassword" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <CheckBox
+                        android:id="@+id/chkSsUdp"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="16dp"
+                        android:text="UDP"
+                        android:textColor="@color/text_primary"
+                        android:buttonTint="@color/accent_green"
+                        android:checked="true" />
                 </LinearLayout>
 
             </LinearLayout>
