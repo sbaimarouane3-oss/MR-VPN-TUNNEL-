@@ -30,6 +30,7 @@ data class ParsedProxyConfig(
     // Shadowsocks
     val ssMethod: String = "",        // مثلاً aes-256-gcm, chacha20-ietf-poly1305
     val ssPassword: String = "",
+    val ssUdp: Boolean = true,        // UDP toggle من واجهة Shadowsocks (SSH Settings)
 
     // Transport (network)
     val network: String = "tcp",      // tcp | ws | grpc | http (h2) | xhttp
@@ -75,6 +76,7 @@ data class ParsedProxyConfig(
         o.put("password", password)
         o.put("ssMethod", ssMethod)
         o.put("ssPassword", ssPassword)
+        o.put("ssUdp", ssUdp)
         o.put("network", network)
         o.put("path", path)
         o.put("hostHeader", hostHeader)
@@ -108,6 +110,7 @@ data class ParsedProxyConfig(
                 password = o.optString("password", ""),
                 ssMethod = o.optString("ssMethod", ""),
                 ssPassword = o.optString("ssPassword", ""),
+                ssUdp = o.optBoolean("ssUdp", true),
                 network = o.optString("network", "tcp"),
                 path = o.optString("path", ""),
                 hostHeader = o.optString("hostHeader", ""),
