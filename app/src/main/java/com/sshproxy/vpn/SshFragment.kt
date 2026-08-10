@@ -33,6 +33,16 @@ class SshFragment : Fragment(R.layout.fragment_ssh) {
     lateinit var sniSection: LinearLayout
     lateinit var payloadSection: LinearLayout
     lateinit var proxySection: LinearLayout
+    lateinit var sshCoreFieldsSection: LinearLayout
+    lateinit var udpgwSection: LinearLayout
+    lateinit var v2raySection: LinearLayout
+    lateinit var edtV2rayJson: EditText
+    lateinit var shadowsocksSection: LinearLayout
+    lateinit var edtSsServer: EditText
+    lateinit var edtSsPort: EditText
+    lateinit var edtSsMethod: EditText
+    lateinit var edtSsPassword: EditText
+    lateinit var chkSsUdp: CheckBox
     lateinit var btnConnect: Button
     lateinit var btnShareLog: Button
     lateinit var btnImportConfig: Button
@@ -66,6 +76,16 @@ class SshFragment : Fragment(R.layout.fragment_ssh) {
         sniSection = view.findViewById(R.id.sniSection)
         payloadSection = view.findViewById(R.id.payloadSection)
         proxySection = view.findViewById(R.id.proxySection)
+        sshCoreFieldsSection = view.findViewById(R.id.sshCoreFieldsSection)
+        udpgwSection = view.findViewById(R.id.udpgwSection)
+        v2raySection = view.findViewById(R.id.v2raySection)
+        edtV2rayJson = view.findViewById(R.id.edtV2rayJson)
+        shadowsocksSection = view.findViewById(R.id.shadowsocksSection)
+        edtSsServer = view.findViewById(R.id.edtSsServer)
+        edtSsPort = view.findViewById(R.id.edtSsPort)
+        edtSsMethod = view.findViewById(R.id.edtSsMethod)
+        edtSsPassword = view.findViewById(R.id.edtSsPassword)
+        chkSsUdp = view.findViewById(R.id.chkSsUdp)
         btnConnect = view.findViewById(R.id.btnConnect)
         btnShareLog = view.findViewById(R.id.btnShareLog)
         btnImportConfig = view.findViewById(R.id.btnImportConfig)
