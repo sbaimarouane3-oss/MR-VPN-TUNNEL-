@@ -424,7 +424,7 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * كتبين/كتخبي غير الحقول اللي عندها علاقة بالبروتوكول المختار:
-     * SNI (SSH-TLS*/XTRA)، Payload (*-Payload)، Remote Proxy (*-Proxy).
+     * SNI (SSH-TLS.. أو XTRA)، Payload (*-Payload)، Remote Proxy (*-Proxy).
      * Host/User/Pass كيبقاو بانين دايما مهما كان البروتوكول.
      */
     private fun applyProtocolFieldVisibility(f: SshFragment, opt: ProtocolOption) {
