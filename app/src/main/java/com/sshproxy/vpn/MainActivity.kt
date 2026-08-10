@@ -768,11 +768,25 @@ class MainActivity : AppCompatActivity() {
                 val host = if (hostPort.contains(":")) hostPort.substringBeforeLast(":") else hostPort
                 port = if (hostPort.contains(":")) hostPort.substringAfterLast(":") else "—"
                 server = if (host.isBlank()) "—" else maskForDisplay(host)
+
+                // نفس الحساب بالضبط لي كايستعملو SshVpnService (logTag) وImportedConfig.protocolLabel() -
+                // قبل كان هادشي ناقص هنا، فكان الكارد كيبين "SSH-Payload" بينما
+                // اللوگ الحقيقي كيبين "SSH-Proxy-Payload" (Remote Proxy معمر
+                // ومختلف عن SSH Host). دابا التلاتة كيتفقو.
+                val portNum = port.toIntOrNull() ?: 443
+                val proxyText = f.edtProxy.text?.toString()?.trim().orEmpty()
+                val proxyHost = if (proxyText.contains(":")) proxyText.substringBeforeLast(":") else host
+                val proxyPort = if (proxyText.contains(":")) {
+                    proxyText.substringAfterLast(":").toIntOrNull() ?: portNum
+                } else portNum
+                val usesProxy = proxyHost.isNotBlank() && (proxyHost != host || proxyPort != portNum)
+
                 protocol = buildString {
                     append("SSH")
                     if (f.chkUseSsl.isChecked) append("-TLS")
+                    if (usesProxy) append("-Proxy")
                     if (f.chkUsePayload.isChecked) append("-Payload")
-                }
+                }.let { if (it == "SSH") "SSH-Direct" else it }
             }
         }
 
