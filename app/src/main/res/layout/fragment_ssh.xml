@@ -30,22 +30,13 @@
                 android:gravity="center_horizontal"
                 android:padding="26dp">
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="VPN CONNECTION"
-                    android:textColor="@color/text_muted"
-                    android:textSize="12sp"
-                    android:textStyle="bold"
-                    android:letterSpacing="0.12" />
-
-                <!-- زر الاتصال: دائري، بلا نص فوقو (كان "DISCONNECTED" هنا
-                     من قبل - تحيد). حالة الاتصال (نص+لون) بانة تحت الدائرة
-                     غير كوصف صغير، ماشي فوق الزر. -->
+                <!-- زر الاتصال: دائري، بلا نص/عنوان فوقو ("VPN CONNECTION"
+                     و"DISCONNECTED" كانو هنا من قبل - تحيدو). حالة الاتصال
+                     بانة غير جوا الكارد اللي تحت (Status row)، وفـ نص
+                     START/STOP جوا الدائرة نفسها. -->
                 <FrameLayout
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="20dp">
+                    android:layout_height="wrap_content">
 
                     <!-- حلقة نبض خفيفة (Connecting/Reconnecting) - مخبية
                          بالـdefault، كيتحكم فيها MainActivity عبر animator
@@ -68,51 +59,15 @@
                         android:insetLeft="0dp"
                         android:insetRight="0dp"
                         android:backgroundTint="@color/state_idle"
-                        android:text=""
-                        app:icon="@drawable/ic_vpn_waves"
-                        app:iconTint="@color/text_primary"
-                        app:iconSize="56dp"
-                        app:iconPadding="0dp"
-                        app:iconGravity="textStart"
+                        android:text="START"
+                        android:textColor="@color/text_primary"
+                        android:textSize="15sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.06"
                         app:cornerRadius="70dp"
                         app:rippleColor="#33FFFFFF"
                         android:contentDescription="Connect" />
                 </FrameLayout>
-
-                <!-- وصف الحالة الحالية - سطر صغير تحت الزر، ماشي فوقو -->
-                <LinearLayout
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:layout_marginTop="16dp">
-
-                    <View
-                        android:id="@+id/viewStatusDot"
-                        android:layout_width="8dp"
-                        android:layout_height="8dp"
-                        android:layout_marginEnd="7dp"
-                        android:background="@drawable/shape_dot" />
-
-                    <ImageView
-                        android:id="@+id/imgStatusCheck"
-                        android:layout_width="15dp"
-                        android:layout_height="15dp"
-                        android:layout_marginEnd="7dp"
-                        android:src="@drawable/ic_check_circle"
-                        android:visibility="gone"
-                        android:contentDescription="Connected" />
-
-                    <TextView
-                        android:id="@+id/txtStatusText"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="DISCONNECTED"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="13sp"
-                        android:textStyle="bold"
-                        android:letterSpacing="0.03" />
-                </LinearLayout>
 
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
@@ -169,11 +124,19 @@
                     android:layout_marginBottom="12dp"
                     android:background="@color/surface_stroke" />
 
-                <!-- Protocol -->
+                <!-- Protocol - قابلة للضغط دابا: كتفتح مختار البروتوكول
+                     (SSH أو VLESS/VMess/Trojan/Shadowsocks/Xray JSON). -->
                 <LinearLayout
+                    android:id="@+id/rowProtocol"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal">
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="2dp">
 
                     <TextView
                         android:layout_width="0dp"
@@ -185,16 +148,24 @@
 
                     <TextView
                         android:id="@+id/txtProtocolValue"
-                        android:layout_width="0dp"
+                        android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
                         android:gravity="end"
                         android:text="—"
                         android:textColor="@color/text_primary"
                         android:textSize="13sp"
                         android:textStyle="bold"
                         android:singleLine="true"
-                        android:ellipsize="end" />
+                        android:ellipsize="end"
+                        android:maxWidth="180dp" />
+
+                    <ImageView
+                        android:layout_width="14dp"
+                        android:layout_height="14dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron_right"
+                        app:tint="@color/text_muted"
+                        android:contentDescription="Choose protocol" />
                 </LinearLayout>
 
                 <View
@@ -269,21 +240,12 @@
         </com.google.android.material.card.MaterialCardView>
 
         <!-- ============ SSH Settings Card ============ -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="22dp"
-            android:layout_marginBottom="10dp"
-            android:layout_marginStart="4dp"
-            android:text="SSH SETTINGS"
-            android:textColor="@color/text_muted"
-            android:textSize="12sp"
-            android:textStyle="bold"
-            android:letterSpacing="0.1" />
-
+        <!-- عنوان "SSH SETTINGS" تحيد من هنا بطلب المستخدم (كارد الحقول
+             بقات بحالها تحت status مباشرة، فراغ فوقها بلا عنوان). -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
             app:cardBackgroundColor="@color/surface_card"
             app:cardCornerRadius="18dp"
             app:cardElevation="0dp"
@@ -351,11 +313,17 @@
                         android:inputType="textPassword" />
                 </com.google.android.material.textfield.TextInputLayout>
 
+                <!-- Use Payload / SSL: بقاو خدامين فالكود (isChecked كيتقرا
+                     منها وقت بناء الاتصال)، غير مخبيين من الواجهة بطلب
+                     المستخدم - دابا كيتعمرو تلقائيا ملي تختار SSH-Payload/
+                     SSH-SSL/SSH-SSL-Payload من مختار البروتوكول (Protocol
+                     row فكارد Connection Details). -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
-                    android:layout_marginTop="16dp">
+                    android:layout_marginTop="16dp"
+                    android:visibility="gone">
 
                     <CheckBox
                         android:id="@+id/chkUsePayload"
