@@ -378,79 +378,103 @@
                         android:inputType="number" />
                 </com.google.android.material.textfield.TextInputLayout>
 
-                <com.google.android.material.textfield.TextInputLayout
-                    style="@style/ModernTextInputLayout"
+                <!-- SNI: تبان غير مع البروتوكولات اللي فيهم TLS (SSH-TLS*, XTRA) -->
+                <LinearLayout
+                    android:id="@+id/sniSection"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp"
-                    android:hint="SNI (SSL only)"
-                    app:helperText="e.g. google.com — leave blank to use host"
-                    app:helperTextEnabled="true">
+                    android:orientation="vertical">
 
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/edtSni"
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/ModernTextInputLayout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:textColor="@color/text_primary"
-                        android:inputType="text" />
-                </com.google.android.material.textfield.TextInputLayout>
+                        android:layout_marginTop="14dp"
+                        android:hint="SNI (SSL only)"
+                        app:helperText="e.g. google.com — leave blank to use host"
+                        app:helperTextEnabled="true">
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Payload"
-                    android:textColor="@color/text_muted"
-                    android:textSize="12sp"
-                    android:textStyle="bold"
-                    android:letterSpacing="0.06"
-                    android:layout_marginTop="18dp"
-                    android:layout_marginBottom="8dp" />
-
-                <FrameLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:background="@drawable/shape_card_alt">
-
-                    <ScrollView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:maxHeight="180dp"
-                        android:scrollbars="vertical"
-                        android:fillViewport="false">
-
-                        <EditText
-                            android:id="@+id/edtPayload"
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edtSni"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:minLines="4"
-                            android:gravity="top|start"
-                            android:padding="14dp"
-                            android:background="@android:color/transparent"
-                            android:fontFamily="monospace"
-                            android:hint="GET / HTTP/1.1[crlf]Host: [host][crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf][crlf]"
                             android:textColor="@color/text_primary"
-                            android:textColorHint="@color/text_muted"
-                            android:textSize="12sp"
-                            android:inputType="textMultiLine" />
-                    </ScrollView>
-                </FrameLayout>
+                            android:inputType="text" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
 
-                <com.google.android.material.textfield.TextInputLayout
-                    style="@style/ModernTextInputLayout"
+                <!-- Payload: تبان غير مع البروتوكولات اللي فيهم Payload -->
+                <LinearLayout
+                    android:id="@+id/payloadSection"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
-                    android:hint="Remote Proxy (ip:port)"
-                    app:helperText="e.g. proxy.host.com:80"
-                    app:helperTextEnabled="true">
+                    android:orientation="vertical">
 
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/edtProxy"
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Payload"
+                        android:textColor="@color/text_muted"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.06"
+                        android:layout_marginTop="18dp"
+                        android:layout_marginBottom="8dp" />
+
+                    <FrameLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:textColor="@color/text_primary"
-                        android:inputType="text" />
-                </com.google.android.material.textfield.TextInputLayout>
+                        android:background="@drawable/shape_card_alt">
+
+                        <ScrollView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:maxHeight="180dp"
+                            android:scrollbars="vertical"
+                            android:fillViewport="false">
+
+                            <EditText
+                                android:id="@+id/edtPayload"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:minLines="4"
+                                android:gravity="top|start"
+                                android:padding="14dp"
+                                android:background="@android:color/transparent"
+                                android:fontFamily="monospace"
+                                android:hint="GET / HTTP/1.1[crlf]Host: [host][crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf][crlf]"
+                                android:textColor="@color/text_primary"
+                                android:textColorHint="@color/text_muted"
+                                android:textSize="12sp"
+                                android:inputType="textMultiLine" />
+                        </ScrollView>
+                    </FrameLayout>
+                </LinearLayout>
+
+                <!-- Remote Proxy: تبان غير مع البروتوكولات اللي فيهم Proxy -->
+                <LinearLayout
+                    android:id="@+id/proxySection"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/ModernTextInputLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="16dp"
+                        android:hint="Remote Proxy (ip:port)"
+                        app:helperText="e.g. proxy.host.com:80"
+                        app:helperTextEnabled="true">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edtProxy"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/text_primary"
+                            android:inputType="text" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
 
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
