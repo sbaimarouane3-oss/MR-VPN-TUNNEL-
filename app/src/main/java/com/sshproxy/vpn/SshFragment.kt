@@ -30,6 +30,9 @@ class SshFragment : Fragment(R.layout.fragment_ssh) {
     lateinit var chkUdpgw: CheckBox
     lateinit var edtUdpgwPort: EditText
     lateinit var manualFieldsContainer: LinearLayout
+    lateinit var sniSection: LinearLayout
+    lateinit var payloadSection: LinearLayout
+    lateinit var proxySection: LinearLayout
     lateinit var btnConnect: Button
     lateinit var btnShareLog: Button
     lateinit var btnImportConfig: Button
@@ -60,6 +63,9 @@ class SshFragment : Fragment(R.layout.fragment_ssh) {
         chkUdpgw = view.findViewById(R.id.chkUdpgw)
         edtUdpgwPort = view.findViewById(R.id.edtUdpgwPort)
         manualFieldsContainer = view.findViewById(R.id.manualFieldsContainer)
+        sniSection = view.findViewById(R.id.sniSection)
+        payloadSection = view.findViewById(R.id.payloadSection)
+        proxySection = view.findViewById(R.id.proxySection)
         btnConnect = view.findViewById(R.id.btnConnect)
         btnShareLog = view.findViewById(R.id.btnShareLog)
         btnImportConfig = view.findViewById(R.id.btnImportConfig)
