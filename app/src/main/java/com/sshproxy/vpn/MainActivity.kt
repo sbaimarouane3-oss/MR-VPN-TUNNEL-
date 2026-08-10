@@ -320,6 +320,7 @@ class MainActivity : AppCompatActivity() {
         fragment.btnShareLog.setOnClickListener { shareLog() }
         fragment.btnImportConfig.setOnClickListener { showImportDialog() }
         fragment.btnRemoveImported.setOnClickListener { confirmRemoveImportedConfig() }
+        fragment.rowProtocol.setOnClickListener { showProtocolPicker() }
 
         restoreManualFields()
         wireManualFieldPersistence()
@@ -409,6 +410,64 @@ class MainActivity : AppCompatActivity() {
             manualFieldsPrefs().edit().putBoolean("udpgwEnabled", checked).apply()
         }
         f.edtUdpgwPort.addTextChangedListener(watcher { manualFieldsPrefs().edit().putString("udpgwPort", it).apply() })
+    }
+
+    /**
+     * مختار البروتوكول: كيبان ملي المستخدم كيدوس على "Protocol" فكارد
+     * Connection Details. بلا ما نبنيو منطق اتصال جديد - غير كيوجه
+     * المستخدم إما للحقول اليدوية ديال SSH (الموجودة ديجا)، أو لنفس
+     * dialog الاستيراد (showImportDialog) اللي كيقبل ديجا VLESS/VMess/
+     * Trojan/Shadowsocks/Xray JSON كامل (XrayConfigParser.parse كيتعرف
+     * عليهم تلقائيا) - بلا أي تعديل فمنطق البارس أو الاتصال.
+     */
+    private fun showProtocolPicker() {
+        val options = arrayOf(
+            "SSH-Direct",
+            "SSH-Payload",
+            "SSH-SSL",
+            "SSH-SSL-Payload",
+            "VLESS",
+            "VMess",
+            "Trojan",
+            "Shadowsocks",
+            "Paste Xray JSON Config"
+        )
+        AlertDialog.Builder(this)
+            .setTitle("Choose Protocol")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> switchToManualSsh(usePayload = false, useSsl = false)
+                    1 -> switchToManualSsh(usePayload = true, useSsl = false)
+                    2 -> switchToManualSsh(usePayload = false, useSsl = true)
+                    3 -> switchToManualSsh(usePayload = true, useSsl = true)
+                    else -> showImportDialog()
+                }
+            }
+            .show()
+    }
+
+    /** كيرجع لوضع الحقول اليدوية ديال SSH، وكيعمر Payload/SSL تلقائيا
+     *  حسب البروتوكول لي ختار المستخدم من القائمة - بلا ما يحتاج يدوس
+     *  على checkbox بيدو (الـcheckboxes بقاو خدامين فالكود، غير مخبيين
+     *  من الواجهة، حيت بزاف من الكود التاني كيقرا منهم isChecked مباشرة). */
+    private fun switchToManualSsh(usePayload: Boolean, useSsl: Boolean) {
+        if (activeImportedConfig != null || activeXrayConfig != null) {
+            SecureConfigStore.clear(applicationContext)
+            activeImportedConfig = null
+            XraySecureConfigStore.clear(applicationContext)
+            activeXrayConfig = null
+        }
+        val f = sshFragment
+        if (f != null) {
+            f.chkUsePayload.isChecked = usePayload
+            f.chkUseSsl.isChecked = useSsl
+            manualFieldsPrefs().edit()
+                .putBoolean("usePayload", usePayload)
+                .putBoolean("useSsl", useSsl)
+                .apply()
+        }
+        updateImportUiState()
+        updateConnectionSummary()
     }
 
     private fun showImportDialog() {
@@ -634,9 +693,16 @@ class MainActivity : AppCompatActivity() {
     private fun applyConnectButtonState() {
         val f = sshFragment ?: return
         f.btnConnect.isEnabled = true
-        // الزر دابا دائري بلا نص (Icon بوحدو) - النص القديم
-        // (CONNECT/CONNECTING.../DISCONNECT) بقا كـcontentDescription
-        // فقط للـaccessibility، ماشي ظاهر فالتصميم.
+        // الزر دائري وفيه نص START/STOP (بدل الأيقونة القديمة) - بطلب
+        // المستخدم. CONNECTING/RECONNECTING كيبقاو نص مؤقت وسط الزر
+        // بحالو، بلا ما يمس منطق الضغط عليه.
+        val buttonText = when {
+            connecting -> "..."
+            reconnectingUi -> "..."
+            connected -> "STOP"
+            else -> "START"
+        }
+        f.btnConnect.text = buttonText
         f.btnConnect.contentDescription = when {
             connecting -> "Connecting"
             reconnectingUi -> "Reconnecting"
@@ -644,9 +710,9 @@ class MainActivity : AppCompatActivity() {
             else -> "Connect"
         }
 
-        // ===== واجهة جديدة فقط (status dot / checkmark / cards) - عرض =====
-        // بلا أي تأثير على منطق الاتصال أعلاه. كتقرا نفس الأعلام
-        // (connecting/reconnectingUi/connected) لي دابا محسوبين.
+        // ===== واجهة جديدة فقط (Status ديال الكارد فقط - الاسم/الدائرة =====
+        // اللي كانو تحت الزر تحيدو، Status دابا كاين غير هنا). بلا أي
+        // تأثير على منطق الاتصال أعلاه.
         val statusLabel = when {
             connecting -> "CONNECTING..."
             reconnectingUi -> "RECONNECTING..."
@@ -661,14 +727,9 @@ class MainActivity : AppCompatActivity() {
             else -> R.color.state_idle
         }
         val statusColor = androidx.core.content.ContextCompat.getColor(this, statusColorRes)
-        f.txtStatusText.text = statusLabel
-        f.txtStatusText.setTextColor(statusColor)
         f.txtStatusCardValue.text = statusLabel.lowercase()
             .replaceFirstChar { it.uppercase() }
         f.txtStatusCardValue.setTextColor(statusColor)
-        f.viewStatusDot.backgroundTintList = ColorStateList.valueOf(statusColor)
-        f.viewStatusDot.visibility = if (connected) View.GONE else View.VISIBLE
-        f.imgStatusCheck.visibility = if (connected) View.VISIBLE else View.GONE
 
         updateConnectButtonVisual(statusColorRes)
         updateConnectionSummary()
