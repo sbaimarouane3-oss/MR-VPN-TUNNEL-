@@ -61,7 +61,11 @@ private data class ProtocolOption(
     val usePayload: Boolean,
     val useSsl: Boolean,
     val useProxy: Boolean,
-    val isXtra: Boolean = false
+    val isXtra: Boolean = false,
+    // V2Ray: كيبين حقل JSON كبير بدل حقول SSH (Host/User/Pass/Payload/SSL).
+    val isV2Ray: Boolean = false,
+    // Shadowsocks: كيبين حقول Server/Port/Method/Password/UDP بدل حقول SSH.
+    val isShadowsocks: Boolean = false
 )
 
 private val PROTOCOL_OPTIONS = listOf(
@@ -76,7 +80,13 @@ private val PROTOCOL_OPTIONS = listOf(
     // XTRA: يدوي لـ VLESS+TCP (+TLS إلا تعمرت SNI) - نفس حقول SSH-TLS
     // بالضبط (Host:Port, Username/UUID, Password, SNI)، بلا Payload
     // وبلا Proxy. ماشي عبر Import - القيم كتبنى مباشرة فـstartVpnService.
-    ProtocolOption("XTRA", usePayload = false, useSsl = true, useProxy = false, isXtra = true)
+    ProtocolOption("XTRA", usePayload = false, useSsl = true, useProxy = false, isXtra = true),
+    // V2Ray: حقل JSON كامل (V2Ray/Xray config) - كيتبنى مباشرة فـ
+    // startVpnService عبر XrayConfigParser.parse بلا Import.
+    ProtocolOption("V2Ray", usePayload = false, useSsl = false, useProxy = false, isV2Ray = true),
+    // Shadowsocks: حقول Server/Port/Method/Password/UDP يدوية - كيتبنى
+    // ParsedProxyConfig مباشرة فـstartVpnService بلا Import.
+    ProtocolOption("Shadowsocks", usePayload = false, useSsl = false, useProxy = false, isShadowsocks = true)
 )
 
 private val DEFAULT_PROTOCOL = PROTOCOL_OPTIONS[0]
@@ -419,18 +429,30 @@ class MainActivity : AppCompatActivity() {
         f.edtSni.setText(p.getString("sni", ""))
         f.chkUdpgw.isChecked = p.getBoolean("udpgwEnabled", false)
         f.edtUdpgwPort.setText(p.getString("udpgwPort", "7300"))
+        f.edtV2rayJson.setText(p.getString("v2rayJson", ""))
+        f.edtSsServer.setText(p.getString("ssServer", ""))
+        f.edtSsPort.setText(p.getString("ssPort", ""))
+        f.edtSsMethod.setText(p.getString("ssMethod", ""))
+        f.edtSsPassword.setText(p.getString("ssPassword", ""))
+        f.chkSsUdp.isChecked = p.getBoolean("ssUdp", true)
         applyProtocolFieldVisibility(f, opt)
     }
 
     /**
      * كتبين/كتخبي غير الحقول اللي عندها علاقة بالبروتوكول المختار:
      * SNI (SSH-TLS.. أو XTRA)، Payload (*-Payload)، Remote Proxy (*-Proxy).
-     * Host/User/Pass كيبقاو بانين دايما مهما كان البروتوكول.
+     * Host/User/Pass وUDPGW كيبقاو بانين مع بروتوكولات SSH/XTRA، وكيتخبيو
+     * كاملين مع V2Ray/Shadowsocks لي عندهم حقول ديالهم بحالهم (v2raySection/
+     * shadowsocksSection).
      */
     private fun applyProtocolFieldVisibility(f: SshFragment, opt: ProtocolOption) {
-        f.sniSection.visibility = if (opt.useSsl) View.VISIBLE else View.GONE
-        f.payloadSection.visibility = if (opt.usePayload) View.VISIBLE else View.GONE
-        f.proxySection.visibility = if (opt.useProxy) View.VISIBLE else View.GONE
+        f.sshCoreFieldsSection.visibility = if (opt.isV2Ray || opt.isShadowsocks) View.GONE else View.VISIBLE
+        f.udpgwSection.visibility = if (opt.isV2Ray || opt.isShadowsocks) View.GONE else View.VISIBLE
+        f.sniSection.visibility = if (opt.useSsl && !opt.isV2Ray && !opt.isShadowsocks) View.VISIBLE else View.GONE
+        f.payloadSection.visibility = if (opt.usePayload && !opt.isV2Ray && !opt.isShadowsocks) View.VISIBLE else View.GONE
+        f.proxySection.visibility = if (opt.useProxy && !opt.isV2Ray && !opt.isShadowsocks) View.VISIBLE else View.GONE
+        f.v2raySection.visibility = if (opt.isV2Ray) View.VISIBLE else View.GONE
+        f.shadowsocksSection.visibility = if (opt.isShadowsocks) View.VISIBLE else View.GONE
     }
 
     private fun wireManualFieldPersistence() {
@@ -456,6 +478,20 @@ class MainActivity : AppCompatActivity() {
             manualFieldsPrefs().edit().putBoolean("udpgwEnabled", checked).apply()
         }
         f.edtUdpgwPort.addTextChangedListener(watcher { manualFieldsPrefs().edit().putString("udpgwPort", it).apply() })
+
+        // V2Ray: كيبقى الـJSON محفوظ ومعروض عند رجوع المستخدم لتبويب SSH
+        // Settings (بحال Edit) - نفس مبدأ باقي الحقول اليدوية.
+        f.edtV2rayJson.addTextChangedListener(watcher { manualFieldsPrefs().edit().putString("v2rayJson", it).apply() })
+
+        // Shadowsocks: كل حقل كيتحفظ لوحدو باش يبقى قابل للتعديل عند رجوع
+        // المستخدم لنفس البروتوكول.
+        f.edtSsServer.addTextChangedListener(watcher { manualFieldsPrefs().edit().putString("ssServer", it).apply() })
+        f.edtSsPort.addTextChangedListener(watcher { manualFieldsPrefs().edit().putString("ssPort", it).apply() })
+        f.edtSsMethod.addTextChangedListener(watcher { manualFieldsPrefs().edit().putString("ssMethod", it).apply() })
+        f.edtSsPassword.addTextChangedListener(watcher { manualFieldsPrefs().edit().putString("ssPassword", it).apply() })
+        f.chkSsUdp.setOnCheckedChangeListener { _, checked ->
+            manualFieldsPrefs().edit().putBoolean("ssUdp", checked).apply()
+        }
     }
 
     /**
@@ -858,16 +894,37 @@ class MainActivity : AppCompatActivity() {
                 port = ssh.port.toString()
             }
             else -> {
-                val hostPort = f.edtHost.text?.toString()?.trim().orEmpty()
-                val host = if (hostPort.contains(":")) hostPort.substringBeforeLast(":") else hostPort
-                port = if (hostPort.contains(":")) hostPort.substringAfterLast(":") else "—"
-                server = if (host.isBlank()) "—" else maskForDisplay(host)
-
                 // البروتوكول كيتقرا مباشرة من الاختيار المخزن (Choose Protocol)
                 // بدل ما يتبنى من محتوى الحقول - كيضمن توافق تام بين الكارد
                 // وبين الحقول المبينة فعليا فالواجهة.
-                protocol = manualFieldsPrefs().getString("protocol", DEFAULT_PROTOCOL.label)
+                val manualProtocol = manualFieldsPrefs().getString("protocol", DEFAULT_PROTOCOL.label)
                     ?: DEFAULT_PROTOCOL.label
+                protocol = manualProtocol
+
+                when (manualProtocol) {
+                    "V2Ray" -> {
+                        // كنحاولو نستخرجو address:port غير للعرض من الـJSON
+                        // المدخل - بلا ما يأثر على أي حاجة أخرى، وبلا ما
+                        // نوقفو الواجهة إذا كان الـJSON ماشي كامل بازال.
+                        val json = f.edtV2rayJson.text?.toString()?.trim().orEmpty()
+                        val parsed = if (json.isNotEmpty()) {
+                            try { XrayConfigParser.parse(json) } catch (_: Throwable) { null }
+                        } else null
+                        server = if (parsed != null && parsed.address.isNotBlank()) maskForDisplay(parsed.address) else "—"
+                        port = if (parsed != null && parsed.port > 0) parsed.port.toString() else "—"
+                    }
+                    "Shadowsocks" -> {
+                        val host = f.edtSsServer.text?.toString()?.trim().orEmpty()
+                        server = if (host.isBlank()) "—" else maskForDisplay(host)
+                        port = f.edtSsPort.text?.toString()?.trim()?.ifBlank { "—" } ?: "—"
+                    }
+                    else -> {
+                        val hostPort = f.edtHost.text?.toString()?.trim().orEmpty()
+                        val host = if (hostPort.contains(":")) hostPort.substringBeforeLast(":") else hostPort
+                        port = if (hostPort.contains(":")) hostPort.substringAfterLast(":") else "—"
+                        server = if (host.isBlank()) "—" else maskForDisplay(host)
+                    }
+                }
             }
         }
 
@@ -926,10 +983,46 @@ class MainActivity : AppCompatActivity() {
         lastLogContent = ""
 
         if (activeImportedConfig == null && activeXrayConfig == null) {
-            val hostPort = sshFragment?.edtHost?.text?.toString()?.trim() ?: ""
-            if (!hostPort.contains(":")) {
-                appendLog("ERROR: Invalid Configuration.")
-                return
+            val manualProtocol = manualFieldsPrefs().getString("protocol", DEFAULT_PROTOCOL.label)
+                ?: DEFAULT_PROTOCOL.label
+            when (manualProtocol) {
+                "V2Ray" -> {
+                    val json = sshFragment?.edtV2rayJson?.text?.toString()?.trim() ?: ""
+                    if (json.isEmpty()) {
+                        appendLog("ERROR: Invalid Configuration.")
+                        showInvalidCodeDialog("Please paste a V2Ray/Xray JSON config first.")
+                        return
+                    }
+                    // التحقق من صحة JSON قبل أي محاولة اتصال (قبل حتى طلب
+                    // إذن VPN) - نفس منطق XrayConfigParser.parse لي كيتستعمل
+                    // فمسار Import.
+                    try {
+                        XrayConfigParser.parse(json)
+                    } catch (e: Throwable) {
+                        appendLog("ERROR: Invalid Configuration.")
+                        showInvalidCodeDialog(e.message ?: "Invalid V2Ray/Xray JSON config.")
+                        return
+                    }
+                }
+                "Shadowsocks" -> {
+                    val f = sshFragment
+                    val server = f?.edtSsServer?.text?.toString()?.trim() ?: ""
+                    val port = f?.edtSsPort?.text?.toString()?.trim()?.toIntOrNull()
+                    val method = f?.edtSsMethod?.text?.toString()?.trim() ?: ""
+                    val password = f?.edtSsPassword?.text?.toString() ?: ""
+                    if (server.isEmpty() || port == null || port <= 0 || method.isEmpty() || password.isEmpty()) {
+                        appendLog("ERROR: Invalid Configuration.")
+                        showInvalidCodeDialog("Please fill Server, Port, Method and Password.")
+                        return
+                    }
+                }
+                else -> {
+                    val hostPort = sshFragment?.edtHost?.text?.toString()?.trim() ?: ""
+                    if (!hostPort.contains(":")) {
+                        appendLog("ERROR: Invalid Configuration.")
+                        return
+                    }
+                }
             }
         }
 
@@ -1009,6 +1102,63 @@ class MainActivity : AppCompatActivity() {
                     network = "tcp",
                     security = if (sni.isNotBlank()) "tls" else "none",
                     sni = sni
+                )
+
+                intent.putExtra(SshVpnService.EXTRA_MODE, SshVpnService.MODE_XRAY)
+                intent.putExtra(SshVpnService.EXTRA_XRAY_CONFIG, cfg.toJson())
+
+                StateStore.write(applicationContext, SshVpnService.STATE_CONNECTING)
+                startService(intent)
+                connecting = true
+                connected = false
+                reconnectingUi = false
+                failedUi = false
+                applyConnectButtonState()
+                return
+            } else if (manualProtocol == "V2Ray") {
+                // ===== V2Ray - JSON كامل مدخل يدويا، بلا Import =====
+                // الصحة اتفحصت ديجا فـtryConnect() قبل طلب إذن VPN. هنا
+                // كنبنيو ParsedProxyConfig (rawOutboundJson) بنفس الآلية
+                // اللي كيستعملها مسار Import ديال Xray JSON، ونديرو
+                // MODE_XRAY - بلا Mock، Xray الحقيقي (XrayCoreManager) هو
+                // اللي غادي يخدم الكونفيغ.
+                val json = f?.edtV2rayJson?.text?.toString()?.trim() ?: ""
+                val cfg = try {
+                    XrayConfigParser.parse(json)
+                } catch (e: Throwable) {
+                    appendLog("ERROR: Invalid Configuration.")
+                    return
+                }
+
+                intent.putExtra(SshVpnService.EXTRA_MODE, SshVpnService.MODE_XRAY)
+                intent.putExtra(SshVpnService.EXTRA_XRAY_CONFIG, cfg.toJson())
+
+                StateStore.write(applicationContext, SshVpnService.STATE_CONNECTING)
+                startService(intent)
+                connecting = true
+                connected = false
+                reconnectingUi = false
+                failedUi = false
+                applyConnectButtonState()
+                return
+            } else if (manualProtocol == "Shadowsocks") {
+                // ===== Shadowsocks - حقول يدوية مباشرة، بلا Import =====
+                val server = f?.edtSsServer?.text?.toString()?.trim() ?: ""
+                val port = f?.edtSsPort?.text?.toString()?.trim()?.toIntOrNull() ?: 0
+                val method = f?.edtSsMethod?.text?.toString()?.trim() ?: ""
+                val password = f?.edtSsPassword?.text?.toString() ?: ""
+                val udp = f?.chkSsUdp?.isChecked ?: true
+
+                val cfg = ParsedProxyConfig(
+                    protocol = ParsedProxyConfig.ProxyProtocol.SHADOWSOCKS,
+                    remark = "Shadowsocks",
+                    address = server,
+                    port = port,
+                    ssMethod = method,
+                    ssPassword = password,
+                    ssUdp = udp,
+                    network = "tcp",
+                    security = "none"
                 )
 
                 intent.putExtra(SshVpnService.EXTRA_MODE, SshVpnService.MODE_XRAY)
