@@ -7,7 +7,6 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.fragment.app.Fragment
@@ -41,12 +40,10 @@ class SshFragment : Fragment(R.layout.fragment_ssh) {
     // Views ديال التصميم الجديد فقط (عرض/status) — بلا أي منطق اتصال،
     // كيتحدثو فـ MainActivity جنب نفس الأسطر لي كانت كتبدل نص btnConnect
     // من قبل.
-    lateinit var viewStatusDot: View
-    lateinit var imgStatusCheck: ImageView
-    lateinit var txtStatusText: TextView
     lateinit var viewConnectPulseRing: View
     lateinit var txtServerValue: TextView
     lateinit var txtProtocolValue: TextView
+    lateinit var rowProtocol: View
     lateinit var txtPortValue: TextView
     lateinit var txtStatusCardValue: TextView
 
@@ -70,12 +67,10 @@ class SshFragment : Fragment(R.layout.fragment_ssh) {
         importedStatusContainer = view.findViewById(R.id.importedStatusContainer)
         txtImportedStatus = view.findViewById(R.id.txtImportedStatus)
 
-        viewStatusDot = view.findViewById(R.id.viewStatusDot)
-        imgStatusCheck = view.findViewById(R.id.imgStatusCheck)
-        txtStatusText = view.findViewById(R.id.txtStatusText)
         viewConnectPulseRing = view.findViewById(R.id.viewConnectPulseRing)
         txtServerValue = view.findViewById(R.id.txtServerValue)
         txtProtocolValue = view.findViewById(R.id.txtProtocolValue)
+        rowProtocol = view.findViewById(R.id.rowProtocol)
         txtPortValue = view.findViewById(R.id.txtPortValue)
         txtStatusCardValue = view.findViewById(R.id.txtStatusCardValue)
 
