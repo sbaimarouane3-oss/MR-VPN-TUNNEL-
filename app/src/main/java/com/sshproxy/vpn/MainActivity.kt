@@ -15,8 +15,10 @@ import android.view.ViewGroup
 import android.view.animation.LinearInterpolator
 import android.widget.ArrayAdapter
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.widget.SwitchCompat
 import com.google.android.material.button.MaterialButton
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -270,6 +272,7 @@ class MainActivity : AppCompatActivity() {
         navView.setNavigationItemSelectedListener { item ->
             when (item.itemId) {
                 R.id.nav_add -> showImportDialog()
+                R.id.nav_share_proxy -> showProxyShareDialog()
                 R.id.nav_telegram -> openUrl(LinksManager.getCached(applicationContext).telegramUrl)
                 R.id.nav_whatsapp -> openUrl(LinksManager.getCached(applicationContext).whatsappUrl)
                 R.id.nav_sharelog -> shareLog()
@@ -277,6 +280,66 @@ class MainActivity : AppCompatActivity() {
             drawer.closeDrawer(navView)
             true
         }
+    }
+
+    /**
+     * ديالوگ Share Proxy: سويتش تفعيل/تعطيل + حقل البورت. كيقرا/كيكتب
+     * مباشرة فـ SharedPreferences "proxy_share_prefs" (نفس الاسم
+     * والمفاتيح المستعملين فـ SshVpnService.startProxyShareIfEnabled) -
+     * بلا أي مساس بمنطق الاتصال. السيرفيس كيقرا هاد القيم فقط ملي
+     * الحالة توصل READY، فالتفعيل هنا كيتطبق من الاتصال الجاي (أو
+     * ديسكونيكت/كونيكت من جديد إذا كان الـVPN خدام ديجا).
+     */
+    private fun showProxyShareDialog() {
+        val prefs = getSharedPreferences("proxy_share_prefs", MODE_PRIVATE)
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val pad = (16 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad, pad, pad)
+        }
+
+        val switchEnabled = SwitchCompat(this).apply {
+            text = "فعّل مشاركة الإنترنت (Proxy)"
+            isChecked = prefs.getBoolean("enabled", false)
+        }
+        val edtPort = EditText(this).apply {
+            hint = "البورت (افتراضي 8388)"
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setText(prefs.getInt("port", 8388).toString())
+        }
+        val txtHint = TextView(this).apply {
+            text = "بعد التفعيل، خدم أي جهاز آخر فنفس الواي فاي يقدر يضيف SOCKS5 proxy بـIP ديال هاد التيليفون + البورت (غادي يبان فـ Share Log). خاص الـVPN يكون Connected."
+            val pad = (8 * resources.displayMetrics.density).toInt()
+            setPadding(0, pad, 0, 0)
+            alpha = 0.7f
+            textSize = 12f
+        }
+
+        container.addView(switchEnabled)
+        container.addView(edtPort)
+        container.addView(txtHint)
+
+        AlertDialog.Builder(this)
+            .setTitle("Share Proxy")
+            .setView(container)
+            .setPositiveButton("حفظ") { _, _ ->
+                val port = edtPort.text?.toString()?.trim()?.toIntOrNull()
+                if (port == null || port !in 1024..65535) {
+                    Toast.makeText(this, "البورت غير صالح (1024-65535)", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                prefs.edit()
+                    .putBoolean("enabled", switchEnabled.isChecked)
+                    .putInt("port", port)
+                    .apply()
+                Toast.makeText(
+                    this,
+                    if (switchEnabled.isChecked) "مفعّل - غادي يخدم من الاتصال الجاي" else "معطّل",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            .setNegativeButton("إلغاء", null)
+            .show()
     }
 
     private fun openUrl(url: String) {
