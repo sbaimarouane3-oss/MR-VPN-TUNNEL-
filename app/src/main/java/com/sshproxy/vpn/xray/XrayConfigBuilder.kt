@@ -209,7 +209,7 @@ object XrayConfigBuilder {
                     if (cfg.shortId.isNotBlank()) put("shortId", cfg.shortId)
                     if (cfg.spiderX.isNotBlank()) put("spiderX", cfg.spiderX)
                 })
-            
+            }
             else -> stream.put("security", "none")
         }
 
