@@ -661,9 +661,29 @@ class SshVpnService : VpnService() {
         }
 
         log("Tunnel Started Successfully.")
+
+        // ===== تحقق حقيقي قبل أي إعلان CONNECTED =====
+        // XrayCoreManager.start() كيرجع true غير ملي الـSOCKS5 المحلي بدا
+        // كيخدم - هادشي كيوقع حتى لو Server خاطئ، معطل، أو مافيهش Internet
+        // خالص (الـoutbound الحقيقي عند Xray مايتفحصش هنا). خصنا نتأكدو من
+        // الشبكة أولا، ومن بعد نديرو probe حقيقي عبر التونيل نفسو - نفس
+        // verifyTunnelConnectivity() المستعملة فمسار SSH - قبل ما نبدلو
+        // الحالة لـSTATE_READY (كيبانلها فالواجهة "CONNECTED").
+        if (!hasUsableNetwork()) {
+            log("ERROR: No Network Available.")
+            broadcastStatus(STATE_WAITING_NETWORK)
+            throw java.io.IOException("No usable network")
+        }
+
+        log("Verifying Internet Connectivity...")
+        if (!verifyTunnelConnectivity(8000)) {
+            log("ERROR: Server Unreachable.")
+            broadcastStatus(STATE_FAILED)
+            throw java.io.IOException("Xray tunnel started but no real internet connectivity (server unreachable or invalid)")
+        }
+
         log("Connection Established.")
         broadcastStatus(STATE_READY)
-
         // مراقبة دورية: Xray core مازال خدام + SOCKS5 مازال كيرد (نفس فكرة
         // ping loop ديال SSH، لكن بلا session SSH - كنعتمدو غير على
         // XrayCoreManager.isRunning() وping حقيقي عبر checkTunnelLatencyMs).
