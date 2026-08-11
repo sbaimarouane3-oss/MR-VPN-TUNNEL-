@@ -690,9 +690,20 @@ class SshVpnService : VpnService() {
 
         log("Verifying Internet Connectivity...")
         if (!verifyTunnelConnectivity(8000)) {
+            // Server خاطئ/منتهي (الشبكة موجودة وتخدم - hasUsableNetwork()
+            // نجحت فوق - لكن ماكاين حتى probe نجح عبر التونيل). هادي
+            // حالة نهائية (permanent) ماشي حالة "الشبكة راه غادي ترجع" -
+            // فماخصنا نخليوها تدخل لنفس حلقة الـretry اللانهائية لي
+            // كاينة فـonStartCommand (لي كانت هي السبب ديال الـcrash: كل
+            // محاولة كتعاود تشغل Xray core من جديد بزربة كبيرة بلا ما
+            // القديمة توقف مزيان). هنا كنوقفو الـengine وVPN بشكل آمن
+            // وكامل (stopVpn عبر cleanupResources) ونعلنو STATE_FAILED
+            // مرة وحدة، بلا retry - المستخدم كيقدر يبدل Server ويعاود
+            // CONNECT بيدو. return (ماشي throw) باش onStartCommand
+            // مايعاودش يحاول من جديد.
             log("ERROR: Server Unreachable.")
-            broadcastStatus(STATE_FAILED)
-            throw java.io.IOException("Xray tunnel started but no real internet connectivity (server unreachable or invalid)")
+            stopVpn(STATE_FAILED)
+            return
         }
 
         log("Connection Established.")
@@ -1211,12 +1222,27 @@ class SshVpnService : VpnService() {
      * (smartReconnect) never call this - VPN stays active at all times
      * without Process.killProcess.
      */
-    private fun stopVpn() {
+    /**
+     * finalState: الحالة اللي كتبعث قبل التوقف النهائي - STATE_DISCONNECTED
+     * (الافتراضي، ديسكونيكت يدوي عادي) أو STATE_FAILED (Server خاطئ/منتهي
+     * ديال V2Ray/Xray/Shadowsocks - نفس التنظيف الآمن والكامل، غير الحالة
+     * المبعوثة كتبقى FAILED باش المستخدم يعرف بلي كاين مشكل فالكونفيغ،
+     * ماشي ديسكونيكت عادي). الـkill process فكلتا الحالتين ضروري - نفس
+     * السبب المذكور فوق: hev-socks5-tunnel/Xray core ماشي آمنين يعاودو
+     * start/stop بزاف داخل نفس الـprocess.
+     */
+    private fun stopVpn(finalState: String = STATE_DISCONNECTED) {
         vpnActive = false
         reconnectDebounceJob?.cancel()
         cleanupResources()
-        log("Disconnected.")
-        broadcastStatus(STATE_DISCONNECTED)
+        if (finalState == STATE_FAILED) {
+            // سطر log الخطأ الحقيقي (Server Unreachable...) اتسجل ديجا قبل
+            // ما نوصلو لهنا - "Disconnected." هنا يقدر يخلط المستخدم أنو
+            // هو لي دس على Disconnect.
+        } else {
+            log("Disconnected.")
+        }
+        broadcastStatus(finalState)
         try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Throwable) { }
 
         Handler(Looper.getMainLooper()).postDelayed({
