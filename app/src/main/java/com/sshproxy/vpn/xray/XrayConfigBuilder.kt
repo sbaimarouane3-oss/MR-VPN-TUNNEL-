@@ -23,14 +23,17 @@ object XrayConfigBuilder {
         })
 
         // Inbound: SOCKS5 محلي - نفسو اللي hev-socks5-tunnel كيتصل بيه،
-        // بحال ماشي مضبوط مع MiniSocks5Server فمسار SSH.
+        // بحال ماشي مضبوط مع MiniSocks5Server فمسار SSH. الـudp كيبقى true
+        // ديما إلا كان البروتوكول Shadowsocks وقتها كيتبنى من chkSsUdp
+        // (زر UDP فواجهة Shadowsocks) - باقي البروتوكولات ماتبدلاتش.
+        val udpEnabled = if (cfg.protocol == ParsedProxyConfig.ProxyProtocol.SHADOWSOCKS) cfg.ssUdp else true
         root.put("inbounds", JSONArray().put(
             JSONObject().apply {
                 put("listen", "127.0.0.1")
                 put("port", localSocksPort)
                 put("protocol", "socks")
                 put("settings", JSONObject().apply {
-                    put("udp", true)
+                    put("udp", udpEnabled)
                     put("auth", "noauth")
                 })
                 put("sniffing", JSONObject().apply {
