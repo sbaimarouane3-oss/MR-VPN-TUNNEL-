@@ -1173,6 +1173,19 @@ class SshVpnService : VpnService() {
     }
 
     private fun cleanupResources() {
+        // مهم: قبل هاد السطر، vpnActive كان ماكيتبدلش هنا خالص - هادشي
+        // كان كيخلي حلقة إعادة تشغيل التونيل الأصلي (scope.launch { while
+        // (vpnActive) { nativeStartTunnel... } }) خدامة فالخلفية بلا ما
+        // تتوقف حقيقة بين كل محاولة اتصال فاشلة (retry)، وكتعاود تنادي
+        // nativeStartTunnel() بـfd تسد بعدها مباشرة (tunFd?.close() تحت) -
+        // هادشي كيسبب حلقات متوازية فوق بعضياتهم، وhev-socks5-tunnel (كيحتفظ
+        // بحالة C عامة) ماشي آمن يتصاوب فيه start/stop متوازيين - غادي
+        // يسبب native crash حقيقي (كيطيح التطبيق كاملو بلا Exception
+        // ديال Kotlin). هادشي كيبان بسرعة أكبر ملي مافيهش شبكة خالص، حيت
+        // كل محاولة كتفشل وتعاود بزربة (بلا الوقت الكافي باش القديمة
+        // توقف). تبديل vpnActive لـfalse هنا (قبل nativeStopTunnel وقبل
+        // إغلاق tunFd) كيضمن أن الحلقة توقف نهائيا قبل ما نسد الـfd.
+        vpnActive = false
         try { if (nativeLoaded) nativeStopTunnel() } catch (_: Throwable) { }
         try { socksServer?.stop() } catch (_: Throwable) { }
         try { session?.disconnect() } catch (_: Throwable) { }
