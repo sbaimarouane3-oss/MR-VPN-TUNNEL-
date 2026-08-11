@@ -63,6 +63,15 @@ class SshVpnService : VpnService() {
 
         private const val MAX_AUTO_RECONNECT_WINDOW_MS = 60 * 60 * 1000L // 1 hour
 
+        // مشاركة الإنترنت (VPN) مع أجهزة أخرى فنفس الشبكة عبر SOCKS5 proxy -
+        // إضافة جديدة مستقلة، ماكتمسش أي حاجة فمنطق الاتصال الأصلي. البورت
+        // ثابت (ماشي random بحال socksPort الداخلي) حيت هو لي المستخدم غادي
+        // يدخلو يدويا فالأجهزة الأخرى.
+        private const val PROXY_SHARE_PREFS = "proxy_share_prefs"
+        private const val PROXY_SHARE_ENABLED_KEY = "enabled"
+        private const val PROXY_SHARE_PORT_KEY = "port"
+        private const val PROXY_SHARE_DEFAULT_PORT = 8388
+
         private const val CHANNEL_ID = "vpn_status"
         private const val NOTIF_ID = 1
 
@@ -101,6 +110,7 @@ class SshVpnService : VpnService() {
     private var session: Session? = null
     private var tunFd: ParcelFileDescriptor? = null
     private var socksServer: MiniSocks5Server? = null
+    private var proxyShareServer: ProxyShareServer? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     // Random local SOCKS5 port chosen once per service run (instead of a
@@ -1183,6 +1193,28 @@ class SshVpnService : VpnService() {
         return base + jitter
     }
 
+    /**
+     * كيقرا الإعداد (مفعّل + البورت) من SharedPreferences ("proxy_share_prefs")
+     * وكيبدا ProxyShareServer إلا كان مفعّل وماشي خدام ديجا. الهدف ديال
+     * targetPortProvider = { socksPort } هو نفس البورت الداخلي الحالي فأي
+     * لحظة (SSH أو Xray) - بلا ما نمس socksPort نفسو ولا منطق بناء
+     * التونيل الأصلي.
+     */
+    private fun startProxyShareIfEnabled() {
+        try {
+            val prefs = applicationContext.getSharedPreferences(PROXY_SHARE_PREFS, Context.MODE_PRIVATE)
+            val enabled = prefs.getBoolean(PROXY_SHARE_ENABLED_KEY, false)
+            if (!enabled) return
+            if (proxyShareServer?.isRunning() == true) return
+
+            val port = prefs.getInt(PROXY_SHARE_PORT_KEY, PROXY_SHARE_DEFAULT_PORT)
+            val server = ProxyShareServer(port, { socksPort }) { msg -> log(msg) }
+            if (server.start()) {
+                proxyShareServer = server
+            }
+        } catch (_: Throwable) { }
+    }
+
     private fun cleanupResources() {
         // مهم: قبل هاد السطر، vpnActive كان ماكيتبدلش هنا خالص - هادشي
         // كان كيخلي حلقة إعادة تشغيل التونيل الأصلي (scope.launch { while
@@ -1201,9 +1233,11 @@ class SshVpnService : VpnService() {
         try { socksServer?.stop() } catch (_: Throwable) { }
         try { session?.disconnect() } catch (_: Throwable) { }
         try { XrayCoreManager.stop() } catch (_: Throwable) { }
+        try { proxyShareServer?.stop() } catch (_: Throwable) { }
         try { tunFd?.close() } catch (_: Throwable) { }
         socksServer = null
         session = null
+        proxyShareServer = null
         tunFd = null
         log("Cleanup Completed.")
     }
@@ -1274,6 +1308,7 @@ class SshVpnService : VpnService() {
             // Fully async, fully independent of the VPN itself; see
             // UpdateManager for the "never affects the tunnel" guarantees.
             UpdateManager.checkOnceAsync(applicationContext)
+            startProxyShareIfEnabled()
         }
         try {
             val i = Intent(ACTION_STATUS)
