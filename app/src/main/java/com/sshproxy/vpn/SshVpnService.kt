@@ -669,7 +669,20 @@ class SshVpnService : VpnService() {
         // الشبكة أولا، ومن بعد نديرو probe حقيقي عبر التونيل نفسو - نفس
         // verifyTunnelConnectivity() المستعملة فمسار SSH - قبل ما نبدلو
         // الحالة لـSTATE_READY (كيبانلها فالواجهة "CONNECTED").
-        if (!hasUsableNetwork()) {
+        //
+        // مهلة قصيرة قبل الحكم النهائي: مباشرة بعد establish() (إنشاء
+        // واجهة VPN)، بعض الأجهزة كيبقى ConnectivityManager ديالها فمرحلة
+        // انتقالية وكيرجع مؤقتا hasUsableNetwork()=false رغم أن 4G/WiFi
+        // فعليا خدامة (race condition) - عاودنا الفحص لبضع مرات بفواصل
+        // قصيرة قبل ما نعلن WAITING_NETWORK فعلا، بدل فحص واحد فوري.
+        var networkOk = hasUsableNetwork()
+        var networkCheckAttempt = 0
+        while (!networkOk && networkCheckAttempt < 6) {
+            delay(300)
+            networkOk = hasUsableNetwork()
+            networkCheckAttempt++
+        }
+        if (!networkOk) {
             log("ERROR: No Network Available.")
             broadcastStatus(STATE_WAITING_NETWORK)
             throw java.io.IOException("No usable network")
