@@ -23,17 +23,14 @@ object XrayConfigBuilder {
         })
 
         // Inbound: SOCKS5 محلي - نفسو اللي hev-socks5-tunnel كيتصل بيه،
-        // بحال ماشي مضبوط مع MiniSocks5Server فمسار SSH. الـudp كيبقى true
-        // ديما إلا كان البروتوكول Shadowsocks وقتها كيتبنى من chkSsUdp
-        // (زر UDP فواجهة Shadowsocks) - باقي البروتوكولات ماتبدلاتش.
-        val udpEnabled = if (cfg.protocol == ParsedProxyConfig.ProxyProtocol.SHADOWSOCKS) cfg.ssUdp else true
+        // بحال ماشي مضبوط مع MiniSocks5Server فمسار SSH.
         root.put("inbounds", JSONArray().put(
             JSONObject().apply {
                 put("listen", "127.0.0.1")
                 put("port", localSocksPort)
                 put("protocol", "socks")
                 put("settings", JSONObject().apply {
-                    put("udp", udpEnabled)
+                    put("udp", true)
                     put("auth", "noauth")
                 })
                 put("sniffing", JSONObject().apply {
@@ -54,14 +51,20 @@ object XrayConfigBuilder {
         return root.toString()
     }
 
+    private fun stripAllowInsecure(outbound: JSONObject) {
+        try {
+            val stream = outbound.optJSONObject("streamSettings") ?: return
+            val tls = stream.optJSONObject("tlsSettings") ?: return
+            if (tls.has("allowInsecure")) tls.remove("allowInsecure")
+        } catch (_: Throwable) { }
+    }
+
     private fun buildOutbound(cfg: ParsedProxyConfig): JSONObject {
         // Xray JSON خام (استيراد كامل) - كنستعملوه بحالو، غير كنضمنو الـtag.
-        // allowInsecure كيبقى كيفما كتبو المستخدم فالكونفيغ ديالو (true
-        // ولا false ولا غير موجود خالص) - "قبول JSON كامل" يعني بلا ما
-        // التطبيق يبدل شي حاجة فيه من تلقاء راسو، حتى إعدادات TLS.
         cfg.rawOutboundJson?.let {
             val ob = JSONObject(it)
             ob.put("tag", "proxy")
+            stripAllowInsecure(ob)
             return ob
         }
 
