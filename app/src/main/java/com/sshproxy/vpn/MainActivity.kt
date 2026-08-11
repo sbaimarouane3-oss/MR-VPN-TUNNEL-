@@ -9,8 +9,11 @@ import android.content.res.ColorStateList
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
+import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewGroup
 import android.view.animation.LinearInterpolator
+import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
@@ -503,10 +506,39 @@ class MainActivity : AppCompatActivity() {
      * عليهم تلقائيا) - بلا أي تعديل فمنطق البارس أو الاتصال.
      */
     private fun showProtocolPicker() {
-        val options = PROTOCOL_OPTIONS.map { it.label }.toTypedArray()
+        val currentProtocol = manualFieldsPrefs().getString("protocol", DEFAULT_PROTOCOL.label)
+            ?: DEFAULT_PROTOCOL.label
+        val labels = PROTOCOL_OPTIONS.map { it.label }
+
+        // Adapter مخصص غير باش نلونو اسم البروتوكول المختار حاليا بالأخضر
+        // ونزيدو خط فاصل أخضر رفيع بين كل صف والآخر - بلا Radio Button
+        // وبلا علامة ✓ وبلا خلفية كبيرة (هادشي هو التصميم الافتراضي
+        // ديال setItems لي كنا كنستعملوه قبل). اختيار العنصر (onClick)
+        // بقا بالضبط نفس السلوك القديم: switchToManualProtocol().
+        val adapter = object : ArrayAdapter<String>(this, R.layout.item_protocol_choice, R.id.txtProtocolName, labels) {
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val row = convertView ?: LayoutInflater.from(context)
+                    .inflate(R.layout.item_protocol_choice, parent, false)
+                val txt = row.findViewById<TextView>(R.id.txtProtocolName)
+                val divider = row.findViewById<View>(R.id.dividerProtocol)
+
+                val label = labels[position]
+                txt.text = label
+                txt.setTextColor(
+                    androidx.core.content.ContextCompat.getColor(
+                        this@MainActivity,
+                        if (label == currentProtocol) R.color.accent_green else R.color.text_primary
+                    )
+                )
+                // خط الفصل بين كل بروتوكول والآخر - ماكاينش بعد آخر عنصر.
+                divider.visibility = if (position == labels.lastIndex) View.GONE else View.VISIBLE
+                return row
+            }
+        }
+
         AlertDialog.Builder(this)
             .setTitle("Choose Protocol")
-            .setItems(options) { _, which ->
+            .setAdapter(adapter) { _, which ->
                 switchToManualProtocol(PROTOCOL_OPTIONS[which])
             }
             .show()
