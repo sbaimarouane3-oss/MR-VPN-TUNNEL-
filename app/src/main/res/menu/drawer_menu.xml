@@ -7,6 +7,11 @@
         android:title="Add" />
 
     <item
+        android:id="@+id/nav_share_proxy"
+        android:icon="@drawable/ic_wifi_share"
+        android:title="Share Proxy" />
+
+    <item
         android:id="@+id/nav_telegram"
         android:icon="@drawable/ic_telegram"
         android:title="Telegram" />
