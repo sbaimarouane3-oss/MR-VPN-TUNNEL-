@@ -1,3 +1,36 @@
+// ===== Release signing =====
+// Previously buildTypes.release used signingConfigs.debug, which on
+// Android's default (auto-created) debug config means a DIFFERENT random
+// key on every machine/CI runner - GitHub Actions runners are ephemeral, so
+// every build could get signed with a brand new debug key. That's exactly
+// why installing a newer APK over an older one failed with "the package
+// conflicts with an existing package": Android refuses to update an app
+// with an APK signed by a different key than the one already installed.
+//
+// This reads real release credentials from (in priority order):
+//   1) Environment variables KEYSTORE_PATH / KEYSTORE_PASSWORD / KEY_ALIAS /
+//      KEY_PASSWORD - used by .github/workflows/build.yml, which decodes a
+//      secret into a keystore file and exports these before the build.
+//   2) A local keystore.properties file next to this build.gradle (never
+//      committed - see .gitignore) - only useful if you ever build a
+//      release APK by hand from Termux with `gradle assembleRelease`.
+// If neither is present, release falls back to signingConfigs.debug like
+// before, so a plain `gradle assembleDebug`/local build never breaks - it
+// simply won't be installable over a CI-built release APK, which is
+// expected since they're different signing identities.
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+def hasLocalKeystoreProps = keystorePropertiesFile.exists()
+if (hasLocalKeystoreProps) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+def relStoreFile = System.getenv("KEYSTORE_PATH") ?: (hasLocalKeystoreProps ? keystoreProperties['storeFile'] : null)
+def relStorePassword = System.getenv("KEYSTORE_PASSWORD") ?: (hasLocalKeystoreProps ? keystoreProperties['storePassword'] : null)
+def relKeyAlias = System.getenv("KEY_ALIAS") ?: (hasLocalKeystoreProps ? keystoreProperties['keyAlias'] : null)
+def relKeyPassword = System.getenv("KEY_PASSWORD") ?: (hasLocalKeystoreProps ? keystoreProperties['keyPassword'] : null)
+def hasReleaseSigning = relStoreFile != null && relStorePassword != null && relKeyAlias != null && relKeyPassword != null
+
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
@@ -8,12 +41,29 @@ android {
     compileSdk 35
     ndkVersion "27.2.12479018"
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(relStoreFile)
+                storePassword relStorePassword
+                keyAlias relKeyAlias
+                keyPassword relKeyPassword
+            }
+        }
+    }
+
     defaultConfig {
         applicationId "com.sshproxy.vpn"
         minSdk 24
         targetSdk 35
-        versionCode 1
-        versionName "1.0"
+        // Overridable from the command line so CI can pass a real,
+        // always-increasing value (see build.yml: -PappVersionCode=...).
+        // Without that flag (e.g. a plain local build), it falls back to 1 -
+        // fine for local testing, since local builds use a different signing
+        // identity anyway (see the signing config above) and are never meant
+        // to update a CI-built release.
+        versionCode (project.hasProperty('appVersionCode') ? project.property('appVersionCode').toInteger() : 1)
+        versionName (project.hasProperty('appVersionName') ? project.property('appVersionName') : "1.0")
 
         externalNativeBuild {
             cmake {
@@ -38,7 +88,7 @@ android {
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.debug
+            signingConfig hasReleaseSigning ? signingConfigs.release : signingConfigs.debug
         }
         debug {
             signingConfig signingConfigs.debug
