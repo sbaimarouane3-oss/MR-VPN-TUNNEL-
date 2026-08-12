@@ -8,16 +8,17 @@ import java.net.Socket
 import java.util.concurrent.Executors
 
 /**
- * كيشارك تونيل الـVPN الحالي (سواء SSH أو Xray/V2Ray/Shadowsocks) مع
- * أجهزة أخرى فنفس الشبكة (WiFi/Hotspot) - عبر relay خام كيسمع على
- * 0.0.0.0:listenPort وكيربط كل اتصال جاي مباشرة بـ127.0.0.1:targetPort
- * (نفس البورت ديال الـSOCKS5 المحلي اللي كايستعملو hev-tunnel/Xray
- * جوايا التيليفون فعلا).
+ * Shares the currently active VPN tunnel (SSH or Xray/V2Ray/Shadowsocks)
+ * with other devices on the same network (WiFi/Hotspot) via a raw relay.
+ * It listens on 0.0.0.0:listenPort and forwards every incoming connection
+ * directly to 127.0.0.1:targetPort (the same local SOCKS5 port already
+ * used internally by hev-tunnel/Xray on this phone).
  *
- * relay خام بلا أي فهم لبروتوكول SOCKS5 - غير bytes pipe فالجوج
- * الاتجاهات، فماكاينش أي مساس بمنطق الاتصال الأصلي (JSch/Xray/hev).
- * الأجهزة الأخرى خاصها غير يضيفو SOCKS5 proxy بـIP ديال التيليفون على
- * الشبكة + listenPort.
+ * This is a raw byte relay with no understanding of the SOCKS5 protocol
+ * itself - it just pipes bytes in both directions, so it does not touch
+ * the original connection logic (JSch/Xray/hev) in any way.
+ * Other devices only need to add a SOCKS5 proxy pointing to this phone's
+ * IP on the local network + listenPort.
  */
 class ProxyShareServer(
     private val listenPort: Int,
@@ -43,20 +44,20 @@ class ProxyShareServer(
                         val client = ss.accept()
                         pool.execute { handleClient(client) }
                     } catch (e: IOException) {
-                        if (running) onLog("WARN: Proxy Share Accept Error.")
+                        if (running) onLog("WARN: Proxy Share accept error.")
                     }
                 }
             }
             val ip = localLanIp()
             if (ip != null) {
-                onLog("Proxy Share: SOCKS5 على $ip:$listenPort (زيدو ذاك الـIP فالأجهزة لي بغيتي تشاركهم)")
+                onLog("Proxy Share: SOCKS5 on $ip:$listenPort (use this IP on the devices you want to share with)")
             } else {
-                onLog("Proxy Share: SOCKS5 فعّال على البورت $listenPort")
+                onLog("Proxy Share: SOCKS5 active on port $listenPort")
             }
             true
         } catch (e: Throwable) {
             running = false
-            onLog("ERROR: Proxy Share تعذر تشغيلو (البورت $listenPort خدام؟).")
+            onLog("ERROR: Proxy Share failed to start (is port $listenPort already in use?).")
             false
         }
     }
@@ -80,7 +81,7 @@ class ProxyShareServer(
             try { f1.get() } catch (_: Exception) { }
             try { f2.get() } catch (_: Exception) { }
         } catch (_: Exception) {
-            // صامت - نفس منطق MiniSocks5Server، الاتصالات كتنقطع بشكل طبيعي
+            // Silent - same behavior as MiniSocks5Server, connections drop naturally
         } finally {
             try { client.close() } catch (_: Exception) { }
             try { upstream?.close() } catch (_: Exception) { }
@@ -104,7 +105,7 @@ class ProxyShareServer(
         }
     }
 
-    /** كيقلب على IP ديال التيليفون فشبكة الـWiFi/Hotspot (غير للعرض فـlog، ماشي حرج للاتصال). */
+    /** Looks up the phone's LAN IP on WiFi/Hotspot (display only, not critical for the relay itself). */
     private fun localLanIp(): String? {
         return try {
             NetworkInterface.getNetworkInterfaces().asSequence()
