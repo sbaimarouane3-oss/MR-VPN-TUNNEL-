@@ -2,11 +2,13 @@ package com.sshproxy.vpn
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.net.TrafficStats
 import android.net.VpnService
 import android.os.Build
 import android.os.Handler
@@ -112,6 +114,7 @@ class SshVpnService : VpnService() {
     private var tunFd: ParcelFileDescriptor? = null
     private var socksServer: MiniSocks5Server? = null
     private var proxyShareServer: ProxyShareServer? = null
+    private var speedMonitorJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     // Random local SOCKS5 port chosen once per service run (instead of a
@@ -1235,6 +1238,7 @@ class SshVpnService : VpnService() {
         try { session?.disconnect() } catch (_: Throwable) { }
         try { XrayCoreManager.stop() } catch (_: Throwable) { }
         try { proxyShareServer?.stop() } catch (_: Throwable) { }
+        stopSpeedMonitor()
         try { tunFd?.close() } catch (_: Throwable) { }
         socksServer = null
         session = null
@@ -1310,6 +1314,7 @@ class SshVpnService : VpnService() {
             // UpdateManager for the "never affects the tunnel" guarantees.
             UpdateManager.checkOnceAsync(applicationContext)
             startProxyShareIfEnabled()
+            startSpeedMonitor()
         }
         try {
             val i = Intent(ACTION_STATUS)
@@ -1328,16 +1333,85 @@ class SshVpnService : VpnService() {
         else -> "Disconnected"
     }
 
-    private fun updateNotification(state: String) {
+    /**
+     * Tapping the notification opens MainActivity directly - standard
+     * behavior in every other VPN app. FLAG_IMMUTABLE is required on
+     * Android 12+ for PendingIntents that don't need to be mutated.
+     */
+    private fun buildContentIntent(): PendingIntent {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        return PendingIntent.getActivity(this, 0, intent, flags)
+    }
+
+    private fun formatSpeed(bytesPerSec: Long): String {
+        if (bytesPerSec < 1024) return "${bytesPerSec}B/s"
+        val kb = bytesPerSec / 1024.0
+        if (kb < 1024) return String.format("%.0fKB/s", kb)
+        val mb = kb / 1024.0
+        return String.format("%.1fMB/s", mb)
+    }
+
+    /**
+     * Samples TrafficStats for this app's UID once a second and rebuilds the
+     * notification with a live download/upload speed line, same idea as
+     * HTTP Custom / other VPN apps. Only runs while the tunnel is READY -
+     * started from broadcastStatus(), stopped from cleanupResources(), so it
+     * never touches the actual connection/tunnel logic.
+     */
+    private fun startSpeedMonitor() {
+        if (speedMonitorJob?.isActive == true) return
+        val uid = Process.myUid()
+        var lastRx = TrafficStats.getUidRxBytes(uid)
+        var lastTx = TrafficStats.getUidTxBytes(uid)
+        var lastTime = System.currentTimeMillis()
+
+        speedMonitorJob = scope.launch {
+            while (isActive) {
+                delay(1000)
+                val now = System.currentTimeMillis()
+                val rx = TrafficStats.getUidRxBytes(uid)
+                val tx = TrafficStats.getUidTxBytes(uid)
+                val elapsedSec = ((now - lastTime).coerceAtLeast(1)) / 1000.0
+
+                // getUidRxBytes/TxBytes can return -1 on some devices/ROMs
+                // if per-uid stats aren't available - fall back to "0" speed
+                // instead of a garbage negative number.
+                val rxSpeed = if (rx >= 0 && lastRx >= 0) ((rx - lastRx) / elapsedSec).toLong().coerceAtLeast(0) else 0L
+                val txSpeed = if (tx >= 0 && lastTx >= 0) ((tx - lastTx) / elapsedSec).toLong().coerceAtLeast(0) else 0L
+
+                lastRx = rx
+                lastTx = tx
+                lastTime = now
+
+                updateNotification(STATE_READY, "\u2193 ${formatSpeed(rxSpeed)}  \u2191 ${formatSpeed(txSpeed)}")
+            }
+        }
+    }
+
+    private fun stopSpeedMonitor() {
+        speedMonitorJob?.cancel()
+        speedMonitorJob = null
+    }
+
+    private fun updateNotification(state: String, speedText: String? = null) {
         // DISCONNECTED means the foreground notification is about to be
         // removed anyway (stopVpn already calls stopForeground) - no need to
         // rebuild it for that transition.
         if (state == STATE_DISCONNECTED) return
         try {
+            val text = if (state == STATE_READY && speedText != null) {
+                "${notificationTextFor(state)}   $speedText"
+            } else {
+                notificationTextFor(state)
+            }
             val notif = NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("MR VPN TUNNEL")
-                .setContentText(notificationTextFor(state))
+                .setContentText(text)
                 .setSmallIcon(android.R.drawable.ic_lock_lock)
+                .setContentIntent(buildContentIntent())
                 .setOngoing(true)
                 .build()
             val nm = getSystemService(NotificationManager::class.java)
@@ -1355,6 +1429,7 @@ class SshVpnService : VpnService() {
             .setContentTitle("MR VPN TUNNEL")
             .setContentText(notificationTextFor(STATE_CONNECTING))
             .setSmallIcon(android.R.drawable.ic_lock_lock)
+            .setContentIntent(buildContentIntent())
             .setOngoing(true)
             .build()
         startForeground(NOTIF_ID, notif)
