@@ -78,8 +78,30 @@ jobs:
         with:
           gradle-version: 8.7
 
+      # كيفك الـkeystore (release.keystore.jks) من secret مشفر base64 -
+      # نفسو فكل build، حيت GitHub Actions runners مؤقتين وكل build كان
+      # كيولد debug.keystore عشوائي جديد (هادشي هو السبب ديال "الحزمة
+      # تتعارض مع الحزمة الحالية" عند كل تحديث). خاصك تزيد هاد الـsecrets
+      # مرة وحدة فـ Settings > Secrets and variables > Actions:
+      #   KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
+      - name: Decode Release Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > "$GITHUB_WORKSPACE/release.keystore.jks"
+
       - name: Build Release APK
-        run: gradle assembleRelease --stacktrace
+        env:
+          KEYSTORE_PATH: ${{ github.workspace }}/release.keystore.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          gradle assembleRelease --stacktrace \
+            -PappVersionCode=${{ github.run_number }} \
+            -PappVersionName=1.0.${{ github.run_number }}
+
+      - name: Remove Release Keystore
+        if: always()
+        run: rm -f "$GITHUB_WORKSPACE/release.keystore.jks"
 
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
