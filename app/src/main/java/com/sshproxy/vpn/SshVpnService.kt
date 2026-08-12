@@ -63,10 +63,11 @@ class SshVpnService : VpnService() {
 
         private const val MAX_AUTO_RECONNECT_WINDOW_MS = 60 * 60 * 1000L // 1 hour
 
-        // مشاركة الإنترنت (VPN) مع أجهزة أخرى فنفس الشبكة عبر SOCKS5 proxy -
-        // إضافة جديدة مستقلة، ماكتمسش أي حاجة فمنطق الاتصال الأصلي. البورت
-        // ثابت (ماشي random بحال socksPort الداخلي) حيت هو لي المستخدم غادي
-        // يدخلو يدويا فالأجهزة الأخرى.
+        // Shares the VPN's internet connection with other devices on the same
+        // network via a SOCKS5 proxy - a standalone addition, does not touch
+        // the original connection logic. The port is fixed (not random like
+        // the internal socksPort) since the user has to type it manually on
+        // the other devices.
         private const val PROXY_SHARE_PREFS = "proxy_share_prefs"
         private const val PROXY_SHARE_ENABLED_KEY = "enabled"
         private const val PROXY_SHARE_PORT_KEY = "port"
@@ -1194,11 +1195,11 @@ class SshVpnService : VpnService() {
     }
 
     /**
-     * كيقرا الإعداد (مفعّل + البورت) من SharedPreferences ("proxy_share_prefs")
-     * وكيبدا ProxyShareServer إلا كان مفعّل وماشي خدام ديجا. الهدف ديال
-     * targetPortProvider = { socksPort } هو نفس البورت الداخلي الحالي فأي
-     * لحظة (SSH أو Xray) - بلا ما نمس socksPort نفسو ولا منطق بناء
-     * التونيل الأصلي.
+     * Reads the setting (enabled + port) from SharedPreferences
+     * ("proxy_share_prefs") and starts ProxyShareServer if enabled and not
+     * already running. The targetPortProvider = { socksPort } always points
+     * to whatever the current internal port is (SSH or Xray) - without
+     * touching socksPort itself or the original tunnel-building logic.
      */
     private fun startProxyShareIfEnabled() {
         try {
