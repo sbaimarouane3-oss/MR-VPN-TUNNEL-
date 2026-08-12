@@ -1315,6 +1315,14 @@ class SshVpnService : VpnService() {
             UpdateManager.checkOnceAsync(applicationContext)
             startProxyShareIfEnabled()
             startSpeedMonitor()
+        } else {
+            // Any state other than READY (RECONNECTING, WAITING_NETWORK,
+            // FAILED, DISCONNECTED...) must stop the speed monitor - it was
+            // previously left running across state changes, which kept
+            // overwriting the notification back to "Connected + speed"
+            // every second even while the app itself showed
+            // "Reconnecting...", making the two disagree.
+            stopSpeedMonitor()
         }
         try {
             val i = Intent(ACTION_STATUS)
@@ -1354,12 +1362,29 @@ class SshVpnService : VpnService() {
         return String.format("%.1fMB/s", mb)
     }
 
+    private fun formatSize(bytes: Long): String {
+        if (bytes < 1024) return "${bytes}B"
+        val kb = bytes / 1024.0
+        if (kb < 1024) return String.format("%.0fKB", kb)
+        val mb = kb / 1024.0
+        if (mb < 1024) return String.format("%.1fMB", mb)
+        val gb = mb / 1024.0
+        return String.format("%.2fGB", gb)
+    }
+
     /**
      * Samples TrafficStats for this app's UID once a second and rebuilds the
-     * notification with a live download/upload speed line, same idea as
-     * HTTP Custom / other VPN apps. Only runs while the tunnel is READY -
-     * started from broadcastStatus(), stopped from cleanupResources(), so it
-     * never touches the actual connection/tunnel logic.
+     * notification with a live download/upload speed line plus the total
+     * data used since this connection came up, same idea as HTTP Custom /
+     * other VPN apps. Only runs while the tunnel is READY - started from
+     * broadcastStatus(), stopped from cleanupResources() and on any
+     * non-READY state change, so it never touches the actual
+     * connection/tunnel logic.
+     *
+     * The total resets each time a new READY session starts (i.e. it counts
+     * "usage since the last (re)connect", not lifetime usage across the
+     * whole app install) - that mirrors what most VPN apps show as their
+     * live session counter.
      */
     private fun startSpeedMonitor() {
         if (speedMonitorJob?.isActive == true) return
@@ -1367,6 +1392,8 @@ class SshVpnService : VpnService() {
         var lastRx = TrafficStats.getUidRxBytes(uid)
         var lastTx = TrafficStats.getUidTxBytes(uid)
         var lastTime = System.currentTimeMillis()
+        val sessionStartRx = lastRx
+        val sessionStartTx = lastTx
 
         speedMonitorJob = scope.launch {
             while (isActive) {
@@ -1382,11 +1409,18 @@ class SshVpnService : VpnService() {
                 val rxSpeed = if (rx >= 0 && lastRx >= 0) ((rx - lastRx) / elapsedSec).toLong().coerceAtLeast(0) else 0L
                 val txSpeed = if (tx >= 0 && lastTx >= 0) ((tx - lastTx) / elapsedSec).toLong().coerceAtLeast(0) else 0L
 
+                val totalUsed = if (rx >= 0 && tx >= 0 && sessionStartRx >= 0 && sessionStartTx >= 0) {
+                    ((rx - sessionStartRx) + (tx - sessionStartTx)).coerceAtLeast(0)
+                } else 0L
+
                 lastRx = rx
                 lastTx = tx
                 lastTime = now
 
-                updateNotification(STATE_READY, "\u2193 ${formatSpeed(rxSpeed)}  \u2191 ${formatSpeed(txSpeed)}")
+                updateNotification(
+                    STATE_READY,
+                    "\u2193 ${formatSpeed(rxSpeed)}  \u2191 ${formatSpeed(txSpeed)}  \u2022  ${formatSize(totalUsed)}"
+                )
             }
         }
     }
