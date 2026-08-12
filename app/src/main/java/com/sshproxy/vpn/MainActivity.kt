@@ -199,6 +199,12 @@ class MainActivity : AppCompatActivity() {
                 appendStartupDiag("--- Native Crash saved ---")
                 appendStartupDiag(crashFile.readText())
                 appendStartupDiag("--- End Native Crash ---")
+                // Consume it: without this, the same (ever-growing) crash
+                // file gets re-appended into the diag log on every single
+                // app launch, so old crash reports pile up and duplicate
+                // endlessly in Share Log. Deleting it here means each crash
+                // is recorded exactly once.
+                crashFile.delete()
             }
         } catch (_: Throwable) { }
 
@@ -474,7 +480,7 @@ class MainActivity : AppCompatActivity() {
 
     fun onLogFragmentReady(fragment: LogFragment) {
         logFragment = fragment
-        fragment.txtLog.text = lastLogContent
+        fragment.txtLog.text = LogFormatter.format(lastLogContent)
         fragment.logScroll.post { fragment.logScroll.fullScroll(View.FOCUS_DOWN) }
     }
 
@@ -837,7 +843,7 @@ class MainActivity : AppCompatActivity() {
             val newlyAdded = if (content.startsWith(lastLogContent)) content.removePrefix(lastLogContent) else content
             lastLogContent = content
             logFragment?.let { lf ->
-                lf.txtLog.text = content
+                lf.txtLog.text = LogFormatter.format(content)
                 lf.logScroll.post { lf.logScroll.fullScroll(View.FOCUS_DOWN) }
             }
 
@@ -1045,7 +1051,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun shareLog() {
         try {
-            val sessionLog = logFragment?.txtLog?.text?.toString() ?: lastLogContent
+            val sessionLog = lastLogContent
             val diagFile = File(applicationContext.filesDir, "vpn_startup_diag.txt")
             val diag = if (diagFile.exists()) diagFile.readText() else ""
             val fullLog = buildString {
