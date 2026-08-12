@@ -283,12 +283,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * ديالوگ Share Proxy: سويتش تفعيل/تعطيل + حقل البورت. كيقرا/كيكتب
-     * مباشرة فـ SharedPreferences "proxy_share_prefs" (نفس الاسم
-     * والمفاتيح المستعملين فـ SshVpnService.startProxyShareIfEnabled) -
-     * بلا أي مساس بمنطق الاتصال. السيرفيس كيقرا هاد القيم فقط ملي
-     * الحالة توصل READY، فالتفعيل هنا كيتطبق من الاتصال الجاي (أو
-     * ديسكونيكت/كونيكت من جديد إذا كان الـVPN خدام ديجا).
+     * Share Proxy dialog: an on/off switch plus a port field. Reads/writes
+     * directly to SharedPreferences "proxy_share_prefs" (same name and keys
+     * used in SshVpnService.startProxyShareIfEnabled) - without touching
+     * the connection logic at all. The service only reads these values once
+     * the state reaches READY, so a change here applies starting from the
+     * next connection (or a disconnect/reconnect if the VPN is already up).
      */
     private fun showProxyShareDialog() {
         val prefs = getSharedPreferences("proxy_share_prefs", MODE_PRIVATE)
@@ -299,16 +299,16 @@ class MainActivity : AppCompatActivity() {
         }
 
         val switchEnabled = SwitchCompat(this).apply {
-            text = "فعّل مشاركة الإنترنت (Proxy)"
+            text = "Enable Internet Sharing (Proxy)"
             isChecked = prefs.getBoolean("enabled", false)
         }
         val edtPort = EditText(this).apply {
-            hint = "البورت (افتراضي 8388)"
+            hint = "Port (default 8388)"
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
             setText(prefs.getInt("port", 8388).toString())
         }
         val txtHint = TextView(this).apply {
-            text = "بعد التفعيل، خدم أي جهاز آخر فنفس الواي فاي يقدر يضيف SOCKS5 proxy بـIP ديال هاد التيليفون + البورت (غادي يبان فـ Share Log). خاص الـVPN يكون Connected."
+            text = "Once enabled, any other device on the same WiFi can add a SOCKS5 proxy using this phone's IP + the port (it will appear in Share Log). The VPN must be Connected."
             val pad = (8 * resources.displayMetrics.density).toInt()
             setPadding(0, pad, 0, 0)
             alpha = 0.7f
@@ -322,10 +322,10 @@ class MainActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle("Share Proxy")
             .setView(container)
-            .setPositiveButton("حفظ") { _, _ ->
+            .setPositiveButton("Save") { _, _ ->
                 val port = edtPort.text?.toString()?.trim()?.toIntOrNull()
                 if (port == null || port !in 1024..65535) {
-                    Toast.makeText(this, "البورت غير صالح (1024-65535)", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Invalid port (1024-65535)", Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
                 prefs.edit()
@@ -334,11 +334,11 @@ class MainActivity : AppCompatActivity() {
                     .apply()
                 Toast.makeText(
                     this,
-                    if (switchEnabled.isChecked) "مفعّل - غادي يخدم من الاتصال الجاي" else "معطّل",
+                    if (switchEnabled.isChecked) "Enabled - will start on the next connection" else "Disabled",
                     Toast.LENGTH_SHORT
                 ).show()
             }
-            .setNegativeButton("إلغاء", null)
+            .setNegativeButton("Cancel", null)
             .show()
     }
 
