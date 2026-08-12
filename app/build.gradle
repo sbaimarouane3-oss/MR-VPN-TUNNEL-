@@ -1,3 +1,8 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
 // ===== Release signing =====
 // Previously buildTypes.release used signingConfigs.debug, which on
 // Android's default (auto-created) debug config means a DIFFERENT random
@@ -30,11 +35,6 @@ def relStorePassword = System.getenv("KEYSTORE_PASSWORD") ?: (hasLocalKeystorePr
 def relKeyAlias = System.getenv("KEY_ALIAS") ?: (hasLocalKeystoreProps ? keystoreProperties['keyAlias'] : null)
 def relKeyPassword = System.getenv("KEY_PASSWORD") ?: (hasLocalKeystoreProps ? keystoreProperties['keyPassword'] : null)
 def hasReleaseSigning = relStoreFile != null && relStorePassword != null && relKeyAlias != null && relKeyPassword != null
-
-plugins {
-    id 'com.android.application'
-    id 'org.jetbrains.kotlin.android'
-}
 
 android {
     namespace 'com.sshproxy.vpn'
