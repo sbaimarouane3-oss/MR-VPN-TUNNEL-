@@ -65,15 +65,19 @@ class SshVpnService : VpnService() {
 
         private const val MAX_AUTO_RECONNECT_WINDOW_MS = 60 * 60 * 1000L // 1 hour
 
-        // Shares the VPN's internet connection with other devices on the same
-        // network via a SOCKS5 proxy - a standalone addition, does not touch
-        // the original connection logic. The port is fixed (not random like
-        // the internal socksPort) since the user has to type it manually on
-        // the other devices.
-        private const val PROXY_SHARE_PREFS = "proxy_share_prefs"
-        private const val PROXY_SHARE_ENABLED_KEY = "enabled"
-        private const val PROXY_SHARE_PORT_KEY = "port"
-        private const val PROXY_SHARE_DEFAULT_PORT = 8388
+        // Proxy Sharing settings (enabled flag, port, prefs key/name) now
+        // live in UnifiedProxySharingManager - the single, protocol-agnostic
+        // place this feature is implemented. See that class.
+
+        // Xray connection-health probe interval, per explicit request: was
+        // 6000ms, now 1000ms for much faster failure detection and a live
+        // per-second ping in the log. Trade-off worth knowing: this fires a
+        // real network probe (checkTunnelLatencyMs, up to 3 parallel HTTP
+        // requests) every second for as long as the VPN is connected -
+        // noticeably more data/battery use than the previous 6s interval.
+        // If that turns out to be too aggressive, raising this back up
+        // (e.g. 3000-5000ms) is the only line that needs to change.
+        private const val XRAY_PING_INTERVAL_MS = 1000L
 
         private const val CHANNEL_ID = "vpn_status"
         private const val NOTIF_ID = 1
@@ -113,8 +117,9 @@ class SshVpnService : VpnService() {
     private var session: Session? = null
     private var tunFd: ParcelFileDescriptor? = null
     private var socksServer: MiniSocks5Server? = null
-    private var proxyShareServer: ProxyShareServer? = null
+    @Volatile private var backendProtocolName: String = "SOCKS5" // for UnifiedProxySharingManager's log ("SSH SOCKS5", "VLESS SOCKS5", ...)
     private var speedMonitorJob: Job? = null
+    private var xrayPingMonitorJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     // Random local SOCKS5 port chosen once per service run (instead of a
@@ -158,6 +163,7 @@ class SshVpnService : VpnService() {
     private var lastMaskLogs = false
 
     @Volatile private var vpnActive = false      // true from establish() success until stopVpn()
+    @Volatile private var vpnStopped = false     // guards stopVpn() against running its body twice (see stopVpn)
     @Volatile private var reconnecting = false
     @Volatile private var stopRequested = false  // true once the user taps Disconnect manually (even mid-CONNECTING)
     @Volatile private var networkAvailable = true
@@ -439,6 +445,7 @@ class SshVpnService : VpnService() {
 
         socksServer = MiniSocks5Server(s, "127.0.0.1", socksPort) { msg -> log(msg) }
         socksServer?.start()
+        backendProtocolName = "SSH SOCKS5"
         log("SOCKS5 Proxy Ready.")
 
         // UDPGW: SOCKS5 المحلي ديالنا كيدير غير CONNECT (TCP) وكيرفض UDP
@@ -605,6 +612,7 @@ class SshVpnService : VpnService() {
         } catch (e: Throwable) {
             throw IllegalArgumentException("ERROR: Invalid Configuration.")
         }
+        backendProtocolName = "${cfg.protocol.name} SOCKS5"
 
         SecurityCheck.quickScan()?.let { log(it) }
 
@@ -705,30 +713,45 @@ class SshVpnService : VpnService() {
         log("Verifying Internet Connectivity...")
         if (!verifyTunnelConnectivity(8000)) {
             // Server خاطئ/منتهي (الشبكة موجودة وتخدم - hasUsableNetwork()
-            // نجحت فوق - لكن ماكاين حتى probe نجح عبر التونيل). هادي
-            // حالة نهائية (permanent) ماشي حالة "الشبكة راه غادي ترجع" -
-            // فماخصنا نخليوها تدخل لنفس حلقة الـretry اللانهائية لي
-            // كاينة فـonStartCommand (لي كانت هي السبب ديال الـcrash: كل
-            // محاولة كتعاود تشغل Xray core من جديد بزربة كبيرة بلا ما
-            // القديمة توقف مزيان). هنا كنوقفو الـengine وVPN بشكل آمن
-            // وكامل (stopVpn عبر cleanupResources) ونعلنو STATE_FAILED
-            // مرة وحدة، بلا retry - المستخدم كيقدر يبدل Server ويعاود
-            // CONNECT بيدو. return (ماشي throw) باش onStartCommand
-            // مايعاودش يحاول من جديد.
+            // نجحت فوق - لكن ماكاين حتى probe نجح عبر التونيل). قبل، هادي
+            // الحالة كانت كتوقف كلشي (stopVpn) وتعلن STATE_FAILED مباشرة.
+            // دابا، بحال أي انقطاع كيوقع من بعد ما الاتصال يكون READY،
+            // كنعتمدو على smartReconnectXray() اللي كاينة ديجا: كتوقف
+            // Xray core بشكل آمن (نفس السبب المذكور فوق - بلا ما تعاود
+            // تشغلو بزربة فوق نفسو)، وتعاود تحاول من جديد بـbackoff، بلا
+            // ما تلمس TUN interface (tunFd) ولا nativeStartTunnel/
+            // nativeStopTunnel خالص - غير بعد ساعة كاملة من الفشل
+            // المتواصل كتوقف (STATE_WAITING_USER_ACTION)، ماشي فورا.
+            // vpnActive/tunFd already established above - VPN interface
+            // stays up, Xray core stays alive until smartReconnectXray
+            // itself decides to restart it.
             log("ERROR: Server Unreachable.")
-            stopVpn(STATE_FAILED)
+            broadcastStatus(STATE_RECONNECTING)
+            log("Reconnecting...")
+            scheduleSmartReconnect("initial-server-unreachable", debounceMs = 0)
             return
         }
 
         log("Connection Established.")
         broadcastStatus(STATE_READY)
-        // مراقبة دورية: Xray core مازال خدام + SOCKS5 مازال كيرد (نفس فكرة
-        // ping loop ديال SSH، لكن بلا session SSH - كنعتمدو غير على
-        // XrayCoreManager.isRunning() وping حقيقي عبر checkTunnelLatencyMs).
-        scope.launch(Dispatchers.IO) {
+        startXrayPingMonitor()
+    }
+
+    /**
+     * Periodic Xray connection monitor: Xray core still running + SOCKS5
+     * still responding (same idea as the SSH ping loop, but relying only on
+     * XrayCoreManager.isRunning() and a real probe through the tunnel via
+     * checkTunnelLatencyMs). Guarded so it only ever runs once per
+     * connection - safe to call after ANY path that reaches STATE_READY for
+     * the first time (direct success, or success after retrying from an
+     * initial "Server Unreachable"), whether or not it was already running.
+     */
+    private fun startXrayPingMonitor() {
+        if (xrayPingMonitorJob?.isActive == true) return
+        xrayPingMonitorJob = scope.launch(Dispatchers.IO) {
             var consecutiveFailures = 0
             while (vpnActive) {
-                delay(6000)
+                delay(XRAY_PING_INTERVAL_MS)
                 if (!vpnActive) break
                 if (reconnecting) continue
                 if (mode != MODE_XRAY) break // احتياط: reconnect بدلات الوضع
@@ -1004,6 +1027,7 @@ class SshVpnService : VpnService() {
 
                 try {
                     val cfg = ParsedProxyConfig.fromJson(lastXrayParsedJson)
+                    backendProtocolName = "${cfg.protocol.name} SOCKS5"
                     val xrayJson = XrayConfigBuilder.build(cfg, socksPort)
                     val started = XrayCoreManager.start(
                         context = applicationContext,
@@ -1038,6 +1062,7 @@ class SshVpnService : VpnService() {
             if (success) {
                 firstReconnectFailureAt = 0L
                 broadcastStatus(STATE_READY)
+                startXrayPingMonitor()
             } else if (vpnActive && !stopRequested && myGeneration == reconnectGeneration) {
                 val elapsed = System.currentTimeMillis() - firstReconnectFailureAt
                 if (elapsed >= MAX_AUTO_RECONNECT_WINDOW_MS) {
@@ -1198,25 +1223,22 @@ class SshVpnService : VpnService() {
     }
 
     /**
-     * Reads the setting (enabled + port) from SharedPreferences
-     * ("proxy_share_prefs") and starts ProxyShareServer if enabled and not
-     * already running. The targetPortProvider = { socksPort } always points
-     * to whatever the current internal port is (SSH or Xray) - without
-     * touching socksPort itself or the original tunnel-building logic.
+     * Delegates to [UnifiedProxySharingManager] - the single, shared,
+     * protocol-agnostic Proxy Sharing layer (see its class doc). This
+     * service's only job is to say WHICH backend is currently live and
+     * WHERE its local proxy endpoint is; the manager owns everything about
+     * whether sharing is enabled, the listen port, idempotency, and the
+     * log output. Safe to call on every STATE_READY (initial connect or
+     * any reconnect, any protocol) - it never opens a second listener.
      */
     private fun startProxyShareIfEnabled() {
-        try {
-            val prefs = applicationContext.getSharedPreferences(PROXY_SHARE_PREFS, Context.MODE_PRIVATE)
-            val enabled = prefs.getBoolean(PROXY_SHARE_ENABLED_KEY, false)
-            if (!enabled) return
-            if (proxyShareServer?.isRunning() == true) return
-
-            val port = prefs.getInt(PROXY_SHARE_PORT_KEY, PROXY_SHARE_DEFAULT_PORT)
-            val server = ProxyShareServer(port, { socksPort }) { msg -> log(msg) }
-            if (server.start()) {
-                proxyShareServer = server
-            }
-        } catch (_: Throwable) { }
+        UnifiedProxySharingManager.startIfEnabled(
+            context = applicationContext,
+            backendName = backendProtocolName,
+            localHost = "127.0.0.1",
+            localPortProvider = { socksPort },
+            onLog = { msg -> log(msg) }
+        )
     }
 
     private fun cleanupResources() {
@@ -1237,12 +1259,11 @@ class SshVpnService : VpnService() {
         try { socksServer?.stop() } catch (_: Throwable) { }
         try { session?.disconnect() } catch (_: Throwable) { }
         try { XrayCoreManager.stop() } catch (_: Throwable) { }
-        try { proxyShareServer?.stop() } catch (_: Throwable) { }
+        try { UnifiedProxySharingManager.stop() } catch (_: Throwable) { }
         stopSpeedMonitor()
         try { tunFd?.close() } catch (_: Throwable) { }
         socksServer = null
         session = null
-        proxyShareServer = null
         tunFd = null
         log("Cleanup Completed.")
     }
@@ -1271,6 +1292,18 @@ class SshVpnService : VpnService() {
      * start/stop بزاف داخل نفس الـprocess.
      */
     private fun stopVpn(finalState: String = STATE_DISCONNECTED) {
+        // Idempotency guard: stopVpn() can legitimately be reached from two
+        // places almost simultaneously - (1) the user tapping Disconnect
+        // (ACTION_DISCONNECT in onStartCommand) and (2) the connect retry
+        // loop's own catch block, which also calls stopVpn() once it
+        // observes stopRequested == true after its in-flight attempt throws
+        // (because cleanupResources() from path 1 tore down the session/
+        // socks/tunFd out from under it). Without this guard both paths ran
+        // the full body - double "Disconnected." log lines, double
+        // Cleanup Completed., and two competing killProcess schedules.
+        if (vpnStopped) return
+        vpnStopped = true
+
         vpnActive = false
         reconnectDebounceJob?.cancel()
         cleanupResources()
@@ -1290,7 +1323,11 @@ class SshVpnService : VpnService() {
     }
 
     private fun log(msg: String) {
-        val tagged = if (logTag.isNotEmpty()) "[$logTag] $msg" else msg
+        // Proxy Sharing lines already carry their own [PROXY] tag and are
+        // protocol-agnostic by design (see UnifiedProxySharingManager) -
+        // they should never also get stamped with the current protocol's
+        // [SSH]/[XRAY] tag, which would make them look backend-specific.
+        val tagged = if (logTag.isNotEmpty() && !msg.startsWith("[PROXY]")) "[$logTag] $msg" else msg
         FileLogger.append(applicationContext, tagged)
         try {
             val i = Intent(ACTION_LOG)
