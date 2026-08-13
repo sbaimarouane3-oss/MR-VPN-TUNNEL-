@@ -69,15 +69,9 @@ class SshVpnService : VpnService() {
         // live in UnifiedProxySharingManager - the single, protocol-agnostic
         // place this feature is implemented. See that class.
 
-        // Xray connection-health probe interval, per explicit request: was
-        // 6000ms, now 1000ms for much faster failure detection and a live
-        // per-second ping in the log. Trade-off worth knowing: this fires a
-        // real network probe (checkTunnelLatencyMs, up to 3 parallel HTTP
-        // requests) every second for as long as the VPN is connected -
-        // noticeably more data/battery use than the previous 6s interval.
-        // If that turns out to be too aggressive, raising this back up
-        // (e.g. 3000-5000ms) is the only line that needs to change.
-        private const val XRAY_PING_INTERVAL_MS = 1000L
+        // Xray connection-health probe interval - modified to 5 seconds
+        // for better battery and data efficiency
+        private const val XRAY_PING_INTERVAL_MS = 5000L
 
         private const val CHANNEL_ID = "vpn_status"
         private const val NOTIF_ID = 1
@@ -122,8 +116,8 @@ class SshVpnService : VpnService() {
     private var xrayPingMonitorJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    // Random local SOCKS5 port chosen once per service run (instead of a
-    // fixed, hardcoded port) so a static analysis of the APK/traffic can't
+    // Random local SOCKS5 port chosen once per service run instead of a
+    // fixed, hardcoded port so a static analysis of the APK/traffic can't
     // rely on a known constant port. Every reconnect within the same run
     // reuses this same value, since the native tunnel (started once and
     // never restarted - see connect()) is already bound to it.
@@ -745,6 +739,10 @@ class SshVpnService : VpnService() {
      * connection - safe to call after ANY path that reaches STATE_READY for
      * the first time (direct success, or success after retrying from an
      * initial "Server Unreachable"), whether or not it was already running.
+     * 
+     * MODIFIED: Ping interval increased from 1s to 5s for better battery
+     * and data efficiency. Reconnection logic now requires 6 consecutive
+     * failures and verifies Xray is actually not running before reconnecting.
      */
     private fun startXrayPingMonitor() {
         if (xrayPingMonitorJob?.isActive == true) return
@@ -777,10 +775,14 @@ class SshVpnService : VpnService() {
                         if (networkAvailable) networkAvailable = false
                         broadcastStatus(STATE_WAITING_NETWORK)
                     }
-                    if (consecutiveFailures >= 3 && networkAvailable) {
-                        log("ERROR: Native Tunnel Failed.")
-                        consecutiveFailures = 0
-                        scheduleSmartReconnect("xray-ping-failed", debounceMs = 0)
+                    // MODIFIED: Increased failure threshold from 3 to 6
+                    // and added verification that Xray is actually not running
+                    if (consecutiveFailures >= 6) {
+                        if (!XrayCoreManager.isRunning()) {
+                            log("ERROR: Native Tunnel Failed.")
+                            consecutiveFailures = 0
+                            scheduleSmartReconnect("xray-not-running", debounceMs = 0)
+                        }
                     }
                 }
             }
