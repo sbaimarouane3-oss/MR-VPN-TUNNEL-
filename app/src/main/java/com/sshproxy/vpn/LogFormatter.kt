@@ -69,13 +69,18 @@ object LogFormatter {
     }
 
     /**
-     * @param raw the full raw content of the log file (as returned by FileLogger.readAll)
+     * Core selection logic - the ONE place that decides which raw log lines
+     * are visible and in what order. Both [format] (Connection Log UI,
+     * colored) and [formatPlain] (Export TXT, plain text) call this and
+     * only differ in how they render the result - so the two outputs can
+     * never diverge in *content*, only in styling.
+     *
+     * @return list of (timeText, body, isProxyLine) for every visible line, in order.
      */
-    fun format(raw: String): SpannableStringBuilder {
-        val out = SpannableStringBuilder()
+    private fun selectVisibleLines(raw: String): List<Triple<String, String, Boolean>> {
+        val result = mutableListOf<Triple<String, String, Boolean>>()
         var lastPingSeconds: Int? = null
         var lastPingWasOk: Boolean? = null
-        var firstLine = true
 
         for (rawLine in raw.lineSequence()) {
             val line = rawLine.trim()
@@ -124,13 +129,42 @@ object LogFormatter {
                 if (!show) continue
             }
 
-            if (!firstLine) out.append("\n")
-            firstLine = false
-
-            appendLine(out, timeText, body, isProxyLine)
+            result.add(Triple(timeText, body, isProxyLine))
         }
 
+        return result
+    }
+
+    /**
+     * @param raw the full raw content of the log file (as returned by FileLogger.readAll)
+     */
+    fun format(raw: String): SpannableStringBuilder {
+        val out = SpannableStringBuilder()
+        var firstLine = true
+        for ((timeText, body, isProxyLine) in selectVisibleLines(raw)) {
+            if (!firstLine) out.append("\n")
+            firstLine = false
+            appendLine(out, timeText, body, isProxyLine)
+        }
         return out
+    }
+
+    /**
+     * Plain-text equivalent of [format], for Export TXT - same selection,
+     * same order, same lines, just without color spans. This is what makes
+     * the exported file guaranteed to match what the user sees in the
+     * Connection Log tab.
+     */
+    fun formatPlain(raw: String): String {
+        val lines = selectVisibleLines(raw).map { (timeText, body, _) ->
+            val displayBody = if (body.contains("Connection Established", ignoreCase = true)) {
+                "Connected \u2713"
+            } else {
+                body
+            }
+            if (timeText.isNotEmpty()) "[$timeText] $displayBody" else displayBody
+        }
+        return lines.joinToString("\n")
     }
 
     private fun appendLine(out: SpannableStringBuilder, timeText: String, body: String, isProxyLine: Boolean) {
