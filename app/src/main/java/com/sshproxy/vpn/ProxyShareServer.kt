@@ -8,17 +8,18 @@ import java.net.Socket
 import java.util.concurrent.Executors
 
 /**
- * Shares the currently active VPN tunnel (SSH or Xray/V2Ray/Shadowsocks)
+ * Shares whatever local proxy endpoint (SOCKS5) a connected backend exposes
+ * (SSH, Xray/V2Ray/VLESS/VMess/Trojan/Shadowsocks, or any future protocol)
  * with other devices on the same network (WiFi/Hotspot) via a raw relay.
  * It listens on 0.0.0.0:listenPort and forwards every incoming connection
- * directly to 127.0.0.1:targetPort (the same local SOCKS5 port already
- * used internally by hev-tunnel/Xray on this phone).
+ * directly to 127.0.0.1:targetPort (whatever local SOCKS5 port the current
+ * backend is using - see targetPortProvider).
  *
- * This is a raw byte relay with no understanding of the SOCKS5 protocol
- * itself - it just pipes bytes in both directions, so it does not touch
- * the original connection logic (JSch/Xray/hev) in any way.
- * Other devices only need to add a SOCKS5 proxy pointing to this phone's
- * IP on the local network + listenPort.
+ * This is a raw byte relay with no understanding of the SOCKS5 protocol,
+ * and no knowledge of which backend/protocol is behind it - it just pipes
+ * bytes in both directions. All protocol-aware logging/formatting lives one
+ * layer up, in [UnifiedProxySharingManager], which is what makes this class
+ * reusable across every protocol without any per-protocol copy.
  */
 class ProxyShareServer(
     private val listenPort: Int,
@@ -31,7 +32,8 @@ class ProxyShareServer(
 
     fun isRunning(): Boolean = running && serverSocket?.isClosed == false
 
-    fun start(): Boolean {
+    /** Returns the resolved LAN IP on success, or null if binding the listen port failed. */
+    fun start(): String? {
         return try {
             val ss = ServerSocket()
             ss.reuseAddress = true
@@ -44,21 +46,14 @@ class ProxyShareServer(
                         val client = ss.accept()
                         pool.execute { handleClient(client) }
                     } catch (e: IOException) {
-                        if (running) onLog("WARN: Proxy Share accept error.")
+                        if (running) onLog("[PROXY] WARN: Accept error.")
                     }
                 }
             }
-            val ip = localLanIp()
-            if (ip != null) {
-                onLog("Proxy Share: SOCKS5 on $ip:$listenPort (use this IP on the devices you want to share with)")
-            } else {
-                onLog("Proxy Share: SOCKS5 active on port $listenPort")
-            }
-            true
+            localLanIp() ?: "0.0.0.0"
         } catch (e: Throwable) {
             running = false
-            onLog("ERROR: Proxy Share failed to start (is port $listenPort already in use?).")
-            false
+            null
         }
     }
 
