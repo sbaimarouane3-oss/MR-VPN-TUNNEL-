@@ -114,6 +114,7 @@ class MainActivity : AppCompatActivity() {
     private var drawerLayout: DrawerLayout? = null
 
     private var lastLogContent = ""
+    private var hadRealNativeCrashThisLaunch = false // gates Share Log's crash diagnostics section - see shareLog()
     private var activeImportedConfig: ImportedConfig? = null
     private var activeXrayConfig: ParsedProxyConfig? = null
 
@@ -196,6 +197,7 @@ class MainActivity : AppCompatActivity() {
         try {
             val crashFile = File(crashLogPath)
             if (crashFile.exists() && crashFile.length() > 0) {
+                hadRealNativeCrashThisLaunch = true
                 appendStartupDiag("--- Native Crash saved ---")
                 appendStartupDiag(crashFile.readText())
                 appendStartupDiag("--- End Native Crash ---")
@@ -209,7 +211,7 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Throwable) { }
 
         Thread.setDefaultUncaughtExceptionHandler { _, e ->
-            FileLogger.append(applicationContext, "FATAL (uncaught): ${e.javaClass.simpleName}: ${e.message}")
+            LogManager.add(applicationContext, "FATAL (uncaught): ${e.javaClass.simpleName}: ${e.message}")
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -480,7 +482,7 @@ class MainActivity : AppCompatActivity() {
 
     fun onLogFragmentReady(fragment: LogFragment) {
         logFragment = fragment
-        fragment.txtLog.text = LogFormatter.format(lastLogContent)
+        fragment.txtLog.text = LogManager.formatForUi(lastLogContent)
         fragment.logScroll.post { fragment.logScroll.fullScroll(View.FOCUS_DOWN) }
     }
 
@@ -838,12 +840,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private suspend fun refreshLogIfChanged() {
-        val content = withContext(Dispatchers.IO) { FileLogger.readAll(applicationContext) }
+        val content = withContext(Dispatchers.IO) { LogManager.readRaw(applicationContext) }
         if (content != lastLogContent) {
             val newlyAdded = if (content.startsWith(lastLogContent)) content.removePrefix(lastLogContent) else content
             lastLogContent = content
             logFragment?.let { lf ->
-                lf.txtLog.text = LogFormatter.format(content)
+                lf.txtLog.text = LogManager.formatForUi(content)
                 lf.logScroll.post { lf.logScroll.fullScroll(View.FOCUS_DOWN) }
             }
 
@@ -1051,14 +1053,32 @@ class MainActivity : AppCompatActivity() {
 
     private fun shareLog() {
         try {
-            val sessionLog = lastLogContent
-            val diagFile = File(applicationContext.filesDir, "vpn_startup_diag.txt")
-            val diag = if (diagFile.exists()) diagFile.readText() else ""
+            // Fresh read, not the polling-cached lastLogContent: that cache
+            // updates on a 400ms cadence, so tapping Share Log right after
+            // Disconnect could previously export a snapshot that was
+            // missing the very last lines (e.g. the final Ping or
+            // Disconnected. itself) - exactly the "some messages don't
+            // appear in export" symptom. Reading fresh here closes that gap
+            // entirely, and running it through the SAME filter as the UI
+            // (formatForExport = formatForUi's twin, see LogManager) means
+            // the exported file always matches Connection Log line for line.
+            val rawNow = LogManager.readRaw(applicationContext)
+            val sessionLog = LogManager.formatForExport(rawNow)
+
             val fullLog = buildString {
                 append(sessionLog)
-                if (diag.isNotBlank()) {
-                    append("\n--- Startup Diagnostics ---\n")
-                    append(diag)
+                // Native crash diagnostics only if a REAL crash was recorded
+                // THIS launch (see hadRealNativeCrashThisLaunch) - not the
+                // routine "crash guard OK" install confirmation, which used
+                // to get glued onto every single export regardless of
+                // whether anything ever crashed.
+                if (hadRealNativeCrashThisLaunch) {
+                    val diagFile = File(applicationContext.filesDir, "vpn_startup_diag.txt")
+                    val diag = if (diagFile.exists()) diagFile.readText() else ""
+                    if (diag.isNotBlank()) {
+                        append("\n\n--- Native Crash Diagnostics ---\n")
+                        append(diag)
+                    }
                 }
             }
             val file = File(cacheDir, "vpn_log_share.txt")
@@ -1080,7 +1100,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun tryConnect() {
         logFragment?.txtLog?.text = ""
-        FileLogger.clear(applicationContext)
+        LogManager.clear(applicationContext)
         lastLogContent = ""
 
         if (activeImportedConfig == null && activeXrayConfig == null) {
@@ -1338,14 +1358,21 @@ class MainActivity : AppCompatActivity() {
             connecting = false
             reconnectingUi = false
             applyConnectButtonState()
-            appendLog("Disconnected.")
+            // "Disconnected." كيجي من SshVpnService.stopVpn() فقط - ماشي من
+            // هنا. كان هادي بالضبط سبب "Disconnected." مرتين فـ Connection
+            // Log: هاد الدالة كانت كتكتب نسخة ديالها مباشرة (bypass كامل
+            // للـ service)، والـ service كيكتب نسخة ثانية ملي كيوصل
+            // لـ ACTION_DISCONNECT. نفس المبدأ لي متبع ديجا مع
+            // "Starting Service..." (شوف tryConnect فوق) - الحالة الحقيقية
+            // للاتصال (بداية، نهاية، إعادة اتصال) خاصها تجي من مصدر واحد:
+            // الـservice، ماشي الواجهة.
         } catch (e: Throwable) {
             appendLog("ERROR: Disconnect Failed.")
         }
     }
 
     private fun appendLog(msg: String) {
-        FileLogger.append(applicationContext, msg)
+        LogManager.add(applicationContext, msg)
         lifecycleScope.launch { refreshLogIfChanged() }
     }
 
