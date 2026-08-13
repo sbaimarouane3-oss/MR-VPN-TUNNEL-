@@ -491,33 +491,33 @@ class SshVpnService : VpnService() {
         networkAvailable = true
 
         // nativeStartTunnel is a blocking call (runs its own event loop) and
-        // only returns once the tunnel stops or fails. Occasionally it can
-        // return early even though the connection is expected to stay active
-        // - this silently stops packet forwarding (internet stops while SSH
-        // still looks "connected"). We keep relaunching it automatically as
-        // long as vpnActive stays true (i.e. the user hasn't disconnected).
+        // only returns once the tunnel stops or fails. It must be called
+        // EXACTLY ONCE per native tunnel session: hev-socks5-tunnel keeps
+        // global C state (lwip_init() etc. is never torn down symmetrically
+        // - see smartReconnect()'s doc comment) and is not safe to start
+        // again inside the same process. Calling it again after it returns
+        // is what was causing the native crash loop (crash -> process
+        // killed/respawned by the OS -> CrashGuard re-reporting the same
+        // stale crash file on every relaunch -> the endless repeating
+        // "Native Crash Diagnostics" blocks).
         //
-        // This loop is the only place allowed to call
-        // nativeStartTunnel/nativeStopTunnel after the initial connection -
-        // smartReconnect() never touches it.
+        // A normal return only happens via nativeStopTunnel(), which is
+        // only called from cleanupResources() AFTER vpnActive is set to
+        // false. So if this call returns while vpnActive is still true, the
+        // native tunnel died unexpectedly - that's a fatal, unrecoverable-
+        // in-process failure. We surface it once and let stopVpn() do the
+        // same full teardown (+ process restart) it already uses for every
+        // other unrecoverable native error, instead of trying to relaunch
+        // nativeStartTunnel ourselves.
         scope.launch(Dispatchers.IO) {
-            var firstRun = true
-            while (vpnActive) {
-                val rc = nativeStartTunnel(
-                    fd, "127.0.0.1", socksPort, 1500,
-                    if (udpgwLocalPort > 0) "gw" else "udp",
-                    "127.0.0.1", udpgwLocalPort
-                )
-                if (!vpnActive) break
-                // The native loop returning while vpnActive is still true
-                // means it exited unexpectedly (not because the user
-                // disconnected) - surface that instead of silently retrying
-                // forever with no explanation in the log.
-                if (!firstRun || rc != 0) {
-                    log("ERROR: Native Tunnel Failed.")
-                }
-                firstRun = false
-                delay(500)
+            val rc = nativeStartTunnel(
+                fd, "127.0.0.1", socksPort, 1500,
+                if (udpgwLocalPort > 0) "gw" else "udp",
+                "127.0.0.1", udpgwLocalPort
+            )
+            if (vpnActive && !stopRequested) {
+                log("ERROR: Native Tunnel Failed (rc=$rc).")
+                stopVpn(STATE_FAILED)
             }
         }
 
@@ -664,21 +664,20 @@ class SshVpnService : VpnService() {
         vpnActive = true
         networkAvailable = true
 
-        // نفس منطق connect(): nativeStartTunnel blocking، وكنعاودو نشغلوه
-        // إلا رجع بلا ما vpnActive تكون false (خروج غير متوقع).
+        // نفس منطق connect(): nativeStartTunnel blocking وخاصها تتصاوب مرة
+        // وحدة فقط لكل session - hev-socks5-tunnel كيحتفظ بحالة C عامة
+        // ماشي آمنة تتصاوب فيها start/stop متكرر داخل نفس الـprocess (نفس
+        // السبب المشروح فـsmartReconnect()). إلا رجعت وvpnActive بقات true
+        // (خروج غير متوقع)، هادشي معناه فشل نهائي - نعلمو عليه مرة وحدة
+        // ونديرو stopVpn() (نفس التنظيف الآمن) بدل ما نعاودو ننادو عليها.
         scope.launch(Dispatchers.IO) {
-            var firstRun = true
-            while (vpnActive) {
-                val rc = nativeStartTunnel(
-                    fd, "127.0.0.1", socksPort, 1500,
-                    "udp", "127.0.0.1", 0
-                )
-                if (!vpnActive) break
-                if (!firstRun || rc != 0) {
-                    log("ERROR: Native Tunnel Failed.")
-                }
-                firstRun = false
-                delay(500)
+            val rc = nativeStartTunnel(
+                fd, "127.0.0.1", socksPort, 1500,
+                "udp", "127.0.0.1", 0
+            )
+            if (vpnActive && !stopRequested) {
+                log("ERROR: Native Tunnel Failed (rc=$rc).")
+                stopVpn(STATE_FAILED)
             }
         }
 
