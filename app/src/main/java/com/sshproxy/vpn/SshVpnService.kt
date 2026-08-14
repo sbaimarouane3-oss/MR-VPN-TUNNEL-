@@ -284,7 +284,7 @@ class SshVpnService : VpnService() {
             try {
                 startForegroundNotif()
             } catch (e: Throwable) {
-                log("ERROR: Invalid Configuration.")
+                log("ERROR: ${e.javaClass.simpleName}: ${realDetail(e)}")
                 stopSelf()
                 return START_NOT_STICKY
             }
@@ -295,7 +295,7 @@ class SshVpnService : VpnService() {
                     try {
                         log("Preparing VPN Engine...")
                         if (!ensureNativeLoaded(applicationContext)) {
-                            log("ERROR: Invalid Configuration.")
+                            log("ERROR: Native Library Load Failed. (${nativeLoadError ?: "unknown"})")
                             broadcastStatus(STATE_FAILED)
                             stopVpn()
                             return@launch
@@ -359,7 +359,7 @@ class SshVpnService : VpnService() {
         try {
             startForegroundNotif()
         } catch (e: Throwable) {
-            log("ERROR: Invalid Configuration.")
+            log("ERROR: ${e.javaClass.simpleName}: ${realDetail(e)}")
             stopSelf()
             return START_NOT_STICKY
         }
@@ -370,7 +370,7 @@ class SshVpnService : VpnService() {
                 try {
                     log("Preparing VPN Engine...")
                     if (!ensureNativeLoaded(applicationContext)) {
-                        log("ERROR: Invalid Configuration.")
+                        log("ERROR: Native Library Load Failed. (${nativeLoadError ?: "unknown"})")
                         broadcastStatus(STATE_FAILED)
                         stopVpn()
                         return@launch
@@ -491,33 +491,33 @@ class SshVpnService : VpnService() {
         networkAvailable = true
 
         // nativeStartTunnel is a blocking call (runs its own event loop) and
-        // only returns once the tunnel stops or fails. It must be called
-        // EXACTLY ONCE per native tunnel session: hev-socks5-tunnel keeps
-        // global C state (lwip_init() etc. is never torn down symmetrically
-        // - see smartReconnect()'s doc comment) and is not safe to start
-        // again inside the same process. Calling it again after it returns
-        // is what was causing the native crash loop (crash -> process
-        // killed/respawned by the OS -> CrashGuard re-reporting the same
-        // stale crash file on every relaunch -> the endless repeating
-        // "Native Crash Diagnostics" blocks).
+        // only returns once the tunnel stops or fails. Occasionally it can
+        // return early even though the connection is expected to stay active
+        // - this silently stops packet forwarding (internet stops while SSH
+        // still looks "connected"). We keep relaunching it automatically as
+        // long as vpnActive stays true (i.e. the user hasn't disconnected).
         //
-        // A normal return only happens via nativeStopTunnel(), which is
-        // only called from cleanupResources() AFTER vpnActive is set to
-        // false. So if this call returns while vpnActive is still true, the
-        // native tunnel died unexpectedly - that's a fatal, unrecoverable-
-        // in-process failure. We surface it once and let stopVpn() do the
-        // same full teardown (+ process restart) it already uses for every
-        // other unrecoverable native error, instead of trying to relaunch
-        // nativeStartTunnel ourselves.
+        // This loop is the only place allowed to call
+        // nativeStartTunnel/nativeStopTunnel after the initial connection -
+        // smartReconnect() never touches it.
         scope.launch(Dispatchers.IO) {
-            val rc = nativeStartTunnel(
-                fd, "127.0.0.1", socksPort, 1500,
-                if (udpgwLocalPort > 0) "gw" else "udp",
-                "127.0.0.1", udpgwLocalPort
-            )
-            if (vpnActive && !stopRequested) {
-                log("ERROR: Native Tunnel Failed (rc=$rc).")
-                stopVpn(STATE_FAILED)
+            var firstRun = true
+            while (vpnActive) {
+                val rc = nativeStartTunnel(
+                    fd, "127.0.0.1", socksPort, 1500,
+                    if (udpgwLocalPort > 0) "gw" else "udp",
+                    "127.0.0.1", udpgwLocalPort
+                )
+                if (!vpnActive) break
+                // The native loop returning while vpnActive is still true
+                // means it exited unexpectedly (not because the user
+                // disconnected) - surface that instead of silently retrying
+                // forever with no explanation in the log.
+                if (!firstRun || rc != 0) {
+                    log("ERROR: Native Tunnel Failed (rc=$rc).")
+                }
+                firstRun = false
+                delay(500)
             }
         }
 
@@ -610,7 +610,7 @@ class SshVpnService : VpnService() {
         val cfg = try {
             ParsedProxyConfig.fromJson(parsedConfigJson)
         } catch (e: Throwable) {
-            throw IllegalArgumentException("ERROR: Invalid Configuration.")
+            throw IllegalArgumentException("ERROR: ${e.javaClass.simpleName}: ${realDetail(e)}", e)
         }
         backendProtocolName = "${cfg.protocol.name} SOCKS5"
 
@@ -620,7 +620,7 @@ class SshVpnService : VpnService() {
         val xrayJson = try {
             XrayConfigBuilder.build(cfg, socksPort)
         } catch (e: Throwable) {
-            throw IllegalArgumentException("ERROR: Invalid Configuration.")
+            throw IllegalArgumentException("ERROR: ${e.javaClass.simpleName}: ${realDetail(e)}", e)
         }
 
         log("Connecting...")
@@ -631,7 +631,7 @@ class SshVpnService : VpnService() {
             listener = object : XrayCoreManager.Listener {
                 override fun onXrayLog(message: String) { log(message) }
                 override fun onXrayCrashed(reason: String) {
-                    log("ERROR: Native Tunnel Failed.")
+                    log("ERROR: Native Tunnel Failed. ($reason)")
                     if (vpnActive && !stopRequested) scheduleSmartReconnect("xray-crashed", debounceMs = 0)
                 }
             }
@@ -664,20 +664,21 @@ class SshVpnService : VpnService() {
         vpnActive = true
         networkAvailable = true
 
-        // نفس منطق connect(): nativeStartTunnel blocking وخاصها تتصاوب مرة
-        // وحدة فقط لكل session - hev-socks5-tunnel كيحتفظ بحالة C عامة
-        // ماشي آمنة تتصاوب فيها start/stop متكرر داخل نفس الـprocess (نفس
-        // السبب المشروح فـsmartReconnect()). إلا رجعت وvpnActive بقات true
-        // (خروج غير متوقع)، هادشي معناه فشل نهائي - نعلمو عليه مرة وحدة
-        // ونديرو stopVpn() (نفس التنظيف الآمن) بدل ما نعاودو ننادو عليها.
+        // نفس منطق connect(): nativeStartTunnel blocking، وكنعاودو نشغلوه
+        // إلا رجع بلا ما vpnActive تكون false (خروج غير متوقع).
         scope.launch(Dispatchers.IO) {
-            val rc = nativeStartTunnel(
-                fd, "127.0.0.1", socksPort, 1500,
-                "udp", "127.0.0.1", 0
-            )
-            if (vpnActive && !stopRequested) {
-                log("ERROR: Native Tunnel Failed (rc=$rc).")
-                stopVpn(STATE_FAILED)
+            var firstRun = true
+            while (vpnActive) {
+                val rc = nativeStartTunnel(
+                    fd, "127.0.0.1", socksPort, 1500,
+                    "udp", "127.0.0.1", 0
+                )
+                if (!vpnActive) break
+                if (!firstRun || rc != 0) {
+                    log("ERROR: Native Tunnel Failed (rc=$rc).")
+                }
+                firstRun = false
+                delay(500)
             }
         }
 
@@ -1155,6 +1156,12 @@ class SshVpnService : VpnService() {
      * stack trace) and any host/IP/port it might contain are never logged -
      * only this fixed, safe phrase is shown to the user.
      */
+    /** Real exception detail for log messages - message first, falls back to the cause's, bounded so one log line can't blow up. */
+    private fun realDetail(e: Throwable): String {
+        val text = e.message?.takeIf { it.isNotBlank() } ?: e.cause?.message ?: "no detail"
+        return text.take(160)
+    }
+
     private fun classifyConnectError(e: Throwable): String {
         val msg = e.message ?: ""
         val cause = e.cause
@@ -1189,12 +1196,12 @@ class SshVpnService : VpnService() {
 
             msg.contains("UnknownHostKey", ignoreCase = true) ||
                 msg.contains("HostKey", ignoreCase = true) ->
-                "ERROR: Invalid Configuration."
+                "ERROR: Host Key Rejected. (${e.javaClass.simpleName}: ${realDetail(e)})"
 
             msg.contains("SSLHandshake", ignoreCase = true) ||
                 msg.contains("SSLException", ignoreCase = true) ||
                 e is javax.net.ssl.SSLException ->
-                "ERROR: Invalid Configuration."
+                "ERROR: SSL/TLS Handshake Failed. (${e.javaClass.simpleName}: ${realDetail(e)})"
 
             msg.contains("VPN Interface", ignoreCase = true) ||
                 e is IllegalStateException ->
@@ -1212,7 +1219,7 @@ class SshVpnService : VpnService() {
             msg.contains("payload", ignoreCase = true) ->
                 "ERROR: Payload Rejected."
 
-            else -> "ERROR: Network Unreachable."
+            else -> "ERROR: ${e.javaClass.simpleName}: ${realDetail(e)}"
         }
     }
 
