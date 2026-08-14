@@ -42,11 +42,7 @@ object LogFormatter {
         "generating xray config",
         "generating config",
         "parsing config",
-        "preparing vpn engine",
         "verifying internet connectivity",
-        "socks5 proxy ready",
-        "vpn interface created",
-        "tunnel started successfully",
         "debug"
     )
 
@@ -62,9 +58,28 @@ object LogFormatter {
 
     private fun isWhitelisted(body: String): Boolean {
         val l = body.lowercase()
+        // Connection progress must be visible immediately. Previously most of
+        // these lines were filtered out, so the LOG tab looked empty until
+        // "Connection Established" appeared several seconds later.
         return l.startsWith("starting service") ||
+            l.startsWith("preparing vpn engine") ||
             l.startsWith("protocol:") ||
-            l.contains("creating vpn interface") ||
+            l.startsWith("resolving server") ||
+            l.startsWith("connection setup started") ||
+            l.startsWith("ssh session created") ||
+            l.startsWith("connecting") ||
+            l.startsWith("tcp connecting") ||
+            l.startsWith("tcp socket connected") ||
+            l.startsWith("ssl handshake successful") ||
+            l.startsWith("sending payload") ||
+            l.startsWith("payload sent") ||
+            l.startsWith("payload accepted") ||
+            l.startsWith("ssh connect") ||
+            l.startsWith("ssh authentication") ||
+            l.startsWith("creating vpn interface") ||
+            l.startsWith("vpn interface created") ||
+            l.startsWith("socks5 proxy ready") ||
+            l.startsWith("tunnel started successfully") ||
             l.contains("connection established") ||
             l.startsWith("ping:")
     }
