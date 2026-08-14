@@ -15,6 +15,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.os.Process
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.Session
@@ -418,11 +419,15 @@ class SshVpnService : VpnService() {
         }.toString().let { if (it == "SSH") "SSH-Direct" else it }
         log("Protocol: $protocolLabel")
         log("Resolving Server...")
+        val connectTotalStart = SystemClock.elapsedRealtime()
 
         SecurityCheck.quickScan()?.let { log(it) }
+        log("Connection Setup Started.")
 
         val jsch = JSch()
+        val sessionStart = SystemClock.elapsedRealtime()
         val s = jsch.getSession(user, host, port)
+        log("SSH Session Created. (${SystemClock.elapsedRealtime() - sessionStart} ms)")
         s.setPassword(pass)
         s.setConfig("StrictHostKeyChecking", "no")
         s.setConfig("kex", "diffie-hellman-group-exchange-sha256,diffie-hellman-group14-sha256," +
@@ -434,14 +439,17 @@ class SshVpnService : VpnService() {
         })
 
         log("Connecting...")
+        val sshStart = SystemClock.elapsedRealtime()
         try {
             s.connect(12000)
+            log("SSH Connect Completed. (${SystemClock.elapsedRealtime() - sshStart} ms)")
         } catch (e: Throwable) {
+            log("SSH Connect Failed after ${SystemClock.elapsedRealtime() - sshStart} ms")
             log(classifyConnectError(e))
             throw e
         }
         session = s
-        log("SSH Authentication Successful.")
+        log("SSH Authentication Successful. (total ${SystemClock.elapsedRealtime() - connectTotalStart} ms)")
 
         socksServer = MiniSocks5Server(s, "127.0.0.1", socksPort) { msg -> log(msg) }
         socksServer?.start()
