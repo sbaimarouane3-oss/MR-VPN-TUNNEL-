@@ -444,9 +444,9 @@ class SshVpnService : VpnService() {
         log("Connecting...")
         val sshStart = SystemClock.elapsedRealtime()
         try {
-            // Keep the first failed attempt short so the retry loop can
-            // move to the next attempt quickly instead of waiting ~12-16s.
-            s.connect(7000)
+            // Keep the SSH handshake timeout short so a dead/overloaded server
+            // moves to the next retry quickly instead of waiting ~16s.
+            s.connect(4500)
             log("SSH Connect Completed. (${SystemClock.elapsedRealtime() - sshStart} ms)")
         } catch (e: Throwable) {
             log("SSH Connect Failed after ${SystemClock.elapsedRealtime() - sshStart} ms")
@@ -943,7 +943,7 @@ class SshVpnService : VpnService() {
                     s.setSocketFactory(PayloadSocketFactory(lastProxyHost, lastProxyPort, lastPayload, lastHost, lastUsePayload, lastUseSsl, lastSni) { msg ->
                         log(msg)
                     })
-                    s.connect(7000)
+                    s.connect(4500)
                     session = s
                     log("SSH Authentication Successful.")
 
