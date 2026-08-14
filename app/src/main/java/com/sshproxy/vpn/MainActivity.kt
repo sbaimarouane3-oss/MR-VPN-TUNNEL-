@@ -6,8 +6,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.res.ColorStateList
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.os.Build
+import android.telephony.TelephonyManager
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -115,6 +118,12 @@ class MainActivity : AppCompatActivity() {
 
     private var lastLogContent = ""
     private var hadRealNativeCrashThisLaunch = false // gates Share Log's crash diagnostics section - see shareLog()
+    // Ensures the device/network info block below is only written once per
+    // app launch (onCreate can run again after process recreation) - it is
+    // NOT a replacement for the same block SshVpnService writes at the
+    // start of every connection attempt, just an earlier, one-time copy so
+    // it's visible even before the user taps Connect.
+    private var deviceInfoLoggedThisLaunch = false
     private var activeImportedConfig: ImportedConfig? = null
     private var activeXrayConfig: ParsedProxyConfig? = null
 
@@ -213,6 +222,8 @@ class MainActivity : AppCompatActivity() {
         Thread.setDefaultUncaughtExceptionHandler { _, e ->
             LogManager.add(applicationContext, "FATAL (uncaught): ${e.javaClass.simpleName}: ${e.message}")
         }
+
+        logDeviceAndNetworkInfoOnce()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             notifPermLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
@@ -1379,6 +1390,56 @@ class MainActivity : AppCompatActivity() {
     private fun appendLog(msg: String) {
         LogManager.add(applicationContext, msg)
         lifecycleScope.launch { refreshLogIfChanged() }
+    }
+
+    /**
+     * كيبين معلومات الجهاز والشبكة مرة وحدة عند فتح التطبيق (بحال
+     * SshVpnService.logDeviceAndNetworkInfo() لي كيدير نفسها عند كل
+     * محاولة اتصال) - باش تبان فاللوق حتى قبل ما المستخدم يدوس Connect،
+     * بحال HTTP Custom. Best-effort بحتة: أي خطأ هنا ماخصوش يوقف فتح
+     * التطبيق. الصيغة ديال الأسطر خاصها تبقى مطابقة بالضبط لهاديك اللي
+     * كيكتب SshVpnService باش LogFormatter.isDeviceNetworkInfoLine()
+     * تعرفها وما تفلترهاش.
+     */
+    private fun logDeviceAndNetworkInfoOnce() {
+        if (deviceInfoLoggedThisLaunch) return
+        deviceInfoLoggedThisLaunch = true
+        try {
+            val versionName = try { BuildConfig.VERSION_NAME } catch (_: Throwable) { "" }
+            val versionCode = try { BuildConfig.VERSION_CODE } catch (_: Throwable) { 0 }
+            appendLog("MR VPN TUNNEL v$versionName ($versionCode)")
+            appendLog("running on ${Build.MANUFACTURER} (${Build.MODEL})")
+            val abi = Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"
+            appendLog("Android ${Build.VERSION.RELEASE} API-${Build.VERSION.SDK_INT} ($abi)")
+
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            val activeNetwork = cm?.activeNetwork
+            val caps = activeNetwork?.let { cm.getNetworkCapabilities(it) }
+            val connLabel = when {
+                caps == null -> "Unknown Network"
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> {
+                    val tm = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
+                    val carrier = tm?.networkOperatorName?.takeIf { it.isNotBlank() } ?: "Mobile"
+                    "$carrier / Mobile Data"
+                }
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
+                else -> "Unknown Network"
+            }
+            appendLog(connLabel)
+
+            val localIp = try {
+                java.net.NetworkInterface.getNetworkInterfaces().asSequence()
+                    .flatMap { it.inetAddresses.asSequence() }
+                    .firstOrNull { !it.isLoopbackAddress && it is java.net.Inet4Address }
+                    ?.hostAddress
+            } catch (_: Throwable) { null }
+            if (!localIp.isNullOrBlank()) {
+                appendLog("Local IP $localIp")
+            }
+        } catch (_: Throwable) {
+            // best-effort - ماخصهاش توقف/تعطل فتح التطبيق
+        }
     }
 
     override fun onStart() {
