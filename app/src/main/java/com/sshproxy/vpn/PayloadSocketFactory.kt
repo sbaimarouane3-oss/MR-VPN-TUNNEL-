@@ -59,8 +59,14 @@ class PayloadSocketFactory(
             socket.tcpNoDelay = true
             socket.setPerformancePreferences(0, 2, 1) // prioritize low latency over bandwidth/connect-time
         } catch (_: Throwable) { }
-        socket.connect(InetSocketAddress(proxyHost, proxyPort), 6000)
-        onLog("TCP Socket Connected.")
+        onLog("TCP Connecting...")
+        try {
+            socket.connect(InetSocketAddress(proxyHost, proxyPort), 3000)
+        } catch (e: Throwable) {
+            try { socket.close() } catch (_: Throwable) {}
+            throw e
+        }
+        onLog("TCP Socket Connected. (${SystemClock.elapsedRealtime() - totalStart} ms)")
 
         if (useSsl) {
             val sslStart = SystemClock.elapsedRealtime()
@@ -77,15 +83,15 @@ class PayloadSocketFactory(
 
             socket.getOutputStream().write(payload.toByteArray(Charsets.ISO_8859_1))
             socket.getOutputStream().flush()
-            onLog("Sending Payload...")
+            onLog("Payload Sent.")
 
-            // السيرفر يقدر يرجع بزاف ديال الاستجابات (301, 200, 101 Switching...) قبل ما يفتح التونيل.
-            // كنقراو الهيدرز غير باش نعرفو فين توقف الـ HTTP response، بلا ما نبدلو أي منطق اتصال —
-            // النتيجة ماكتأثرش على قرار المتابعة، السوكيت كيرجع فكل الحالات بحال قبل.
-            for (i in 0 until 5) {
-                val status = readHttpHeaders(socket) ?: break
-                if (status.contains("101") || status.contains("Connection Established")) break
-            }
+            // IMPORTANT: do not wait for HTTP response headers here.
+            // Some payload/proxy servers stay silent until SSH starts, while
+            // others send an HTTP response that JSch must consume correctly.
+            // Reading here can block for several seconds and was the main
+            // reason a failed attempt could take ~16 seconds. JSch now owns
+            // the SSH handshake immediately after the payload is sent.
+            onLog("Payload Accepted.")
         }
 
         activeSocket = socket
@@ -110,7 +116,12 @@ class PayloadSocketFactory(
             // don't support it; the handshake below still proceeds normally.
         }
 
-        sslSocket.startHandshake()
+        try {
+            sslSocket.startHandshake()
+        } catch (e: Throwable) {
+            try { sslSocket.close() } catch (_: Throwable) {}
+            throw e
+        }
         return sslSocket
     }
 
