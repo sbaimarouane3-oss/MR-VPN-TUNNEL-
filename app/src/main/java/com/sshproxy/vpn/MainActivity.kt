@@ -430,7 +430,8 @@ class MainActivity : AppCompatActivity() {
             try {
                 if (connected || connecting) disconnect() else tryConnect()
             } catch (e: Throwable) {
-                appendLog("ERROR: Invalid Configuration.")
+                appendLog("ERROR: ${e.javaClass.simpleName}: ${e.message ?: "Unknown error"}")
+                android.util.Log.e("MainActivity", "Connection error", e)
             }
         }
         fragment.btnShareLog.setOnClickListener { shareLog() }
@@ -1120,7 +1121,8 @@ class MainActivity : AppCompatActivity() {
                     try {
                         XrayConfigParser.parse(json)
                     } catch (e: Throwable) {
-                        appendLog("ERROR: Invalid Configuration.")
+                        appendLog("ERROR: ${e.javaClass.simpleName}: ${e.message ?: "Unknown error"}")
+                        android.util.Log.e("MainActivity", "Connection error", e)
                         showInvalidCodeDialog(e.message ?: "Invalid V2Ray/Xray JSON config.")
                         return
                     }
@@ -1155,7 +1157,8 @@ class MainActivity : AppCompatActivity() {
                 startVpnService()
             }
         } catch (e: Throwable) {
-            appendLog("ERROR: Invalid Configuration.")
+            appendLog("ERROR: ${e.javaClass.simpleName}: ${e.message ?: "Unknown error"}")
+            android.util.Log.e("MainActivity", "Connection error", e)
         }
     }
 
@@ -1247,7 +1250,8 @@ class MainActivity : AppCompatActivity() {
                 val cfg = try {
                     XrayConfigParser.parse(json)
                 } catch (e: Throwable) {
-                    appendLog("ERROR: Invalid Configuration.")
+                    appendLog("ERROR: ${e.javaClass.simpleName}: ${e.message ?: "Unknown error"}")
+                    android.util.Log.e("MainActivity", "Connection error", e)
                     return
                 }
 
@@ -1344,7 +1348,8 @@ class MainActivity : AppCompatActivity() {
             // نفس الشيء هنا: السطر "Starting Service..." كيجي من الـservice
             // ماشي من الواجهة، باش يبان مرة وحدة بوحدة فـ log لكل محاولة حقيقية.
         } catch (e: Throwable) {
-            appendLog("ERROR: Invalid Configuration.")
+            appendLog("ERROR: ${e.javaClass.simpleName}: ${e.message ?: "Unknown error"}")
+            android.util.Log.e("MainActivity", "Connection error", e)
         }
     }
 
