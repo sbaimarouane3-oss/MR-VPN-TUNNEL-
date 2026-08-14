@@ -441,15 +441,15 @@ class SshVpnService : VpnService() {
             log(msg)
         })
 
-        log("Connecting...")
+        log("SSH Handshake Starting...")
         val sshStart = SystemClock.elapsedRealtime()
         try {
             // Keep the SSH handshake timeout short so a dead/overloaded server
             // moves to the next retry quickly instead of waiting ~16s.
-            s.connect(4500)
-            log("SSH Connect Completed. (${SystemClock.elapsedRealtime() - sshStart} ms)")
+            s.connect(4000)
+            log("SSH Handshake Successful. (${SystemClock.elapsedRealtime() - sshStart} ms)")
         } catch (e: Throwable) {
-            log("SSH Connect Failed after ${SystemClock.elapsedRealtime() - sshStart} ms")
+            log("SSH Handshake Failed after ${SystemClock.elapsedRealtime() - sshStart} ms")
             // The outer retry loop logs the classified error once. Avoid
             // printing the same ERROR twice for every failed attempt.
             throw e
@@ -932,6 +932,7 @@ class SshVpnService : VpnService() {
                 delay(if (attempt == 0) 0L else 500L)
 
                 try {
+                    log("TCP Connecting...")
                     // 2) + 3) Resend the payload and open a new SSH session
                     val jsch = JSch()
                     val s = jsch.getSession(lastUser, lastHost, lastPort)
@@ -943,7 +944,8 @@ class SshVpnService : VpnService() {
                     s.setSocketFactory(PayloadSocketFactory(lastProxyHost, lastProxyPort, lastPayload, lastHost, lastUsePayload, lastUseSsl, lastSni) { msg ->
                         log(msg)
                     })
-                    s.connect(4500)
+                    log("SSH Handshake Starting...")
+                    s.connect(4000)
                     session = s
                     log("SSH Authentication Successful.")
 
