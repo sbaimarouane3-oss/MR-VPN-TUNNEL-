@@ -395,8 +395,11 @@ class SshVpnService : VpnService() {
                     // which only runs once the tunnel is already up.
                     cleanupResources()
                     attempt++
-                    val waitMs = backoffDelayMs(attempt - 1)
-                    log("Retrying Connection (attempt $attempt)...")
+                    // Short retry pause: failed initial attempts should move
+                    // to the next server attempt quickly, without the old
+                    // exponential 0.8/1.6/3.2s delays.
+                    val waitMs = 500L
+                    log("Retrying Connection (attempt $attempt) in ${waitMs} ms...")
                     delay(waitMs)
                 }
             }
@@ -441,11 +444,14 @@ class SshVpnService : VpnService() {
         log("Connecting...")
         val sshStart = SystemClock.elapsedRealtime()
         try {
-            s.connect(12000)
+            // Keep the first failed attempt short so the retry loop can
+            // move to the next attempt quickly instead of waiting ~12-16s.
+            s.connect(7000)
             log("SSH Connect Completed. (${SystemClock.elapsedRealtime() - sshStart} ms)")
         } catch (e: Throwable) {
             log("SSH Connect Failed after ${SystemClock.elapsedRealtime() - sshStart} ms")
-            log(classifyConnectError(e))
+            // The outer retry loop logs the classified error once. Avoid
+            // printing the same ERROR twice for every failed attempt.
             throw e
         }
         session = s
@@ -923,7 +929,7 @@ class SshVpnService : VpnService() {
                 // 100% ready at that exact instant (especially switching
                 // between Wi-Fi/mobile data) - we give it a short grace period
                 // and retry a few times before giving up.
-                delay(if (attempt == 0) 800 else backoffDelayMs(attempt))
+                delay(if (attempt == 0) 0L else 500L)
 
                 try {
                     // 2) + 3) Resend the payload and open a new SSH session
@@ -937,7 +943,7 @@ class SshVpnService : VpnService() {
                     s.setSocketFactory(PayloadSocketFactory(lastProxyHost, lastProxyPort, lastPayload, lastHost, lastUsePayload, lastUseSsl, lastSni) { msg ->
                         log(msg)
                     })
-                    s.connect(15000)
+                    s.connect(7000)
                     session = s
                     log("SSH Authentication Successful.")
 
