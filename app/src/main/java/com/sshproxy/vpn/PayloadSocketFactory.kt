@@ -61,7 +61,7 @@ class PayloadSocketFactory(
         } catch (_: Throwable) { }
         onLog("TCP Connecting...")
         try {
-            socket.connect(InetSocketAddress(proxyHost, proxyPort), 3000)
+            socket.connect(InetSocketAddress(proxyHost, proxyPort), 2000)
         } catch (e: Throwable) {
             try { socket.close() } catch (_: Throwable) {}
             throw e
@@ -116,11 +116,18 @@ class PayloadSocketFactory(
             // don't support it; the handshake below still proceeds normally.
         }
 
+        // Limit the TLS handshake separately. The JSch connect timeout does
+        // not fully cover the TLS handshake performed inside SocketFactory,
+        // so leaving this unlimited can make SSH-TLS attempts stack up.
+        try { sslSocket.soTimeout = 2500 } catch (_: Throwable) {}
         try {
             sslSocket.startHandshake()
         } catch (e: Throwable) {
             try { sslSocket.close() } catch (_: Throwable) {}
             throw e
+        } finally {
+            // JSch will apply its own SSH timeout after the socket is returned.
+            try { sslSocket.soTimeout = 0 } catch (_: Throwable) {}
         }
         return sslSocket
     }
