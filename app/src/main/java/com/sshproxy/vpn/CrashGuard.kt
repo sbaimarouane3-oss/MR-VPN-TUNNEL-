@@ -2,6 +2,7 @@ package com.sshproxy.vpn
 
 object CrashGuard {
     @Volatile private var loaded = false
+    @Volatile private var installed = false
 
     fun installIfPossible(logPath: String): String {
         return try {
@@ -9,7 +10,10 @@ object CrashGuard {
                 System.loadLibrary("crash-guard")
                 loaded = true
             }
-            install(logPath)
+            if (!installed) {
+                install(logPath)
+                installed = true
+            }
             "crash guard OK"
         } catch (e: Throwable) {
             "crash guard FAILED: ${e.javaClass.simpleName}: ${e.message}"
