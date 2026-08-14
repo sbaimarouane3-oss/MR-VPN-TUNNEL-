@@ -16,6 +16,7 @@ import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.os.Process
 import android.os.SystemClock
+import android.telephony.TelephonyManager
 import androidx.core.app.NotificationCompat
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.Session
@@ -266,6 +267,12 @@ class SshVpnService : VpnService() {
         if (session != null || tunFd != null || socksServer != null) {
             cleanupResources()
         }
+
+        // بلا تاگ برتوكول (logTag مازال ماتحددش لهاد الجلسة الجديدة) -
+        // بحال HTTP Custom لي كيبين معلومات الجهاز/الشبكة مرة وحدة فبداية
+        // كل محاولة اتصال، قبل أي log مرتبط بالبروتوكول.
+        logTag = ""
+        logDeviceAndNetworkInfo()
 
         mode = intent?.getStringExtra(EXTRA_MODE) ?: MODE_SSH
 
@@ -1350,6 +1357,52 @@ class SshVpnService : VpnService() {
         Handler(Looper.getMainLooper()).postDelayed({
             Process.killProcess(Process.myPid())
         }, 300)
+    }
+
+    /**
+     * كيبين معلومات الجهاز والشبكة مرة وحدة فبداية كل محاولة اتصال -
+     * بحال HTTP Custom (اسم/موديل الجهاز، نسخة Android، اسم الشبكة/الـ
+     * IP المحلي). Best-effort بحتة: أي خطأ هنا ماخصوش يوقف الاتصال.
+     */
+    private fun logDeviceAndNetworkInfo() {
+        try {
+            val versionName = try { BuildConfig.VERSION_NAME } catch (_: Throwable) { "" }
+            val versionCode = try { BuildConfig.VERSION_CODE } catch (_: Throwable) { 0 }
+            log("MR VPN TUNNEL v$versionName ($versionCode)")
+            log("running on ${Build.MANUFACTURER} (${Build.MODEL})")
+            val abi = Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"
+            log("Android ${Build.VERSION.RELEASE} API-${Build.VERSION.SDK_INT} ($abi)")
+
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            val activeNetwork = cm?.activeNetwork
+            val caps = activeNetwork?.let { cm.getNetworkCapabilities(it) }
+            val connLabel = when {
+                caps == null -> "Unknown Network"
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> {
+                    // getNetworkOperatorName() ماخصهاش أي permission خاص -
+                    // كتعطي اسم الشبكة (بحال "Maroc Telecom") من الـSIM.
+                    val tm = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
+                    val carrier = tm?.networkOperatorName?.takeIf { it.isNotBlank() } ?: "Mobile"
+                    "$carrier / Mobile Data"
+                }
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
+                else -> "Unknown Network"
+            }
+            log(connLabel)
+
+            val localIp = try {
+                java.net.NetworkInterface.getNetworkInterfaces().asSequence()
+                    .flatMap { it.inetAddresses.asSequence() }
+                    .firstOrNull { !it.isLoopbackAddress && it is java.net.Inet4Address }
+                    ?.hostAddress
+            } catch (_: Throwable) { null }
+            if (!localIp.isNullOrBlank()) {
+                log("Local IP $localIp")
+            }
+        } catch (_: Throwable) {
+            // best-effort - ماخصهاش توقف/تعطل بداية الاتصال
+        }
     }
 
     private fun log(msg: String) {
