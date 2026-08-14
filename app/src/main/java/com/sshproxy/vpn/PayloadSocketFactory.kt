@@ -47,10 +47,13 @@ class PayloadSocketFactory(
     }
 
     override fun createSocket(host: String, port: Int): Socket {
+        // ===== IMPORTANT: Log immediately when called =====
+        onLog("PayloadSocketFactory: createSocket() called for $host:$port")
+        
         val totalStart = SystemClock.elapsedRealtime()
         var socket: Socket = Socket()
         
-        onLog("TCP Connecting...")
+        onLog("TCP Connecting to $proxyHost:$proxyPort...")
         
         try {
             // TCP-level KeepAlive as a second line of defense under the
