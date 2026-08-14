@@ -7,14 +7,8 @@ import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
 import android.graphics.Typeface
 
-/**
- * Turns the raw log file content (every single event, unfiltered, written
- * by SshVpnService.log()) into a clean, colored, filtered log for display
- * in the LOG tab - similar in spirit to HTTP Custom's connection log.
- */
 object LogFormatter {
 
-    // Colors
     private const val COLOR_TIME = 0xFF6B7280.toInt()
     private const val COLOR_WHITE = 0xFFFFFFFF.toInt()
     private const val COLOR_YELLOW = 0xFFFFC107.toInt()
@@ -29,7 +23,9 @@ object LogFormatter {
     private val PING_REGEX =
         Regex("""^Ping:\s*(\d+)ms\s*(OK|FAILED)\.?""", RegexOption.IGNORE_CASE)
 
-    // Internal/debug noise - completely hidden
+    // ============================================================
+    // IMPORTANT: All log messages that should NEVER appear
+    // ============================================================
     private val HIDE_CONTAINS = listOf(
         "crash guard",
         "native crash",
@@ -38,7 +34,7 @@ object LogFormatter {
         "parsing config",
         "verifying internet connectivity",
         "debug",
-        "payloadsocketfactory"  // hide the internal debug line
+        "payloadsocketfactory"  // hide internal debug line
     )
 
     private fun isAlwaysVisible(body: String): Boolean {
@@ -49,80 +45,78 @@ object LogFormatter {
             l.contains("waiting for network") || l.contains("failed")
     }
 
-    /**
-     * ============================================================
-     * IMPORTANT: This is the ONLY place that decides which log
-     * lines appear in the UI. Add ANY new log message here.
-     * ============================================================
-     */
+    // ============================================================
+    // WHITELIST - All log messages that should appear in the UI
+    // ADD ANY NEW MESSAGE HERE
+    // ============================================================
     private fun isWhitelisted(body: String): Boolean {
         val l = body.lowercase()
         
-        // ===== SERVICE LIFECYCLE =====
+        // ---- SERVICE LIFECYCLE ----
         if (l.startsWith("starting service")) return true
         if (l.startsWith("preparing vpn engine")) return true
         
-        // ===== PROTOCOL =====
+        // ---- PROTOCOL ----
         if (l.startsWith("protocol:")) return true
         if (l.startsWith("resolving server")) return true
         if (l.startsWith("connection setup started")) return true
         
-        // ===== SSH SESSION =====
+        // ---- SSH SESSION ----
         if (l.startsWith("ssh session created")) return true
         
-        // ===== SOCKET FACTORY =====
+        // ---- SOCKET FACTORY ----
         if (l.startsWith("creating socket factory")) return true
         if (l.startsWith("socket factory created")) return true
         
-        // ===== TCP CONNECTION =====
+        // ---- TCP CONNECTION ----
         if (l.startsWith("tcp connecting")) return true
         if (l.startsWith("creating tcp socket")) return true
         if (l.startsWith("tcp socket connected")) return true
         if (l.startsWith("tcp connect failed")) return true
         
-        // ===== SSL/TLS =====
+        // ---- SSL/TLS ----
         if (l.startsWith("ssl handshake")) return true
         
-        // ===== PAYLOAD =====
+        // ---- PAYLOAD ----
         if (l.startsWith("sending payload")) return true
         if (l.startsWith("payload sent")) return true
         if (l.startsWith("payload accepted")) return true
         if (l.startsWith("payload send failed")) return true
         
-        // ===== SOCKET FACTORY READY =====
+        // ---- SOCKET FACTORY READY ----
         if (l.startsWith("socket factory ready")) return true
         
-        // ===== SSH HANDSHAKE =====
+        // ---- SSH HANDSHAKE ----
         if (l.startsWith("ssh handshake")) return true
         if (l.startsWith("ssh connect")) return true
         
-        // ===== SSH AUTHENTICATION =====
+        // ---- SSH AUTHENTICATION ----
         if (l.startsWith("ssh authentication")) return true
         
-        // ===== SOCKS5 =====
+        // ---- SOCKS5 ----
         if (l.startsWith("socks5 proxy ready")) return true
         
-        // ===== VPN INTERFACE =====
+        // ---- VPN INTERFACE ----
         if (l.startsWith("creating vpn interface")) return true
         if (l.startsWith("vpn interface created")) return true
         
-        // ===== TUNNEL =====
+        // ---- TUNNEL ----
         if (l.startsWith("tunnel started successfully")) return true
         
-        // ===== CONNECTION ESTABLISHED =====
+        // ---- CONNECTION ESTABLISHED ----
         if (l.contains("connection established")) return true
         
-        // ===== PING =====
+        // ---- PING ----
         if (l.startsWith("ping:")) return true
         
-        // ===== RECONNECT =====
+        // ---- RECONNECT ----
         if (l.startsWith("reconnecting")) return true
         
-        // ===== UDPGW =====
+        // ---- UDPGW ----
         if (l.startsWith("udpgw forward ready")) return true
         if (l.startsWith("warn: udpgw")) return true
         
-        // ===== XRAY =====
+        // ---- XRAY ----
         if (l.startsWith("xray:")) return true
         
         return false
