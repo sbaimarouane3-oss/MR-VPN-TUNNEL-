@@ -483,7 +483,8 @@ class MainActivity : AppCompatActivity() {
 
     fun onLogFragmentReady(fragment: LogFragment) {
         logFragment = fragment
-        fragment.txtLog.text = LogManager.formatForUi(lastLogContent)
+        // عرض النص الخام بدون تصفية
+        fragment.txtLog.text = lastLogContent
         fragment.logScroll.post { fragment.logScroll.fullScroll(View.FOCUS_DOWN) }
     }
 
@@ -846,7 +847,8 @@ class MainActivity : AppCompatActivity() {
             val newlyAdded = if (content.startsWith(lastLogContent)) content.removePrefix(lastLogContent) else content
             lastLogContent = content
             logFragment?.let { lf ->
-                lf.txtLog.text = LogManager.formatForUi(content)
+                // ===== عرض النص الخام بدون تصفية =====
+                lf.txtLog.text = content
                 lf.logScroll.post { lf.logScroll.fullScroll(View.FOCUS_DOWN) }
             }
 
