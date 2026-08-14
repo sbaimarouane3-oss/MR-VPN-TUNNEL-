@@ -433,8 +433,15 @@ class SshVpnService : VpnService() {
         log("SSH Session Created. (${SystemClock.elapsedRealtime() - sessionStart} ms)")
         s.setPassword(pass)
         s.setConfig("StrictHostKeyChecking", "no")
-        s.setConfig("kex", "diffie-hellman-group-exchange-sha256,diffie-hellman-group14-sha256," +
-            "ecdh-sha2-nistp256,curve25519-sha256")
+        // diffie-hellman-group14-sha1 مزيدة فالأول: هي لي كيفضلها هاد
+        // السيرفر (شفناها فـ HTTP Custom: "Key exchange algorithm:
+        // diffie-hellman-group14-sha1") - fixed group، بلا round-trip
+        // زايد. بلا هاد الخوارزمية، JSch كان مجبور يهبط لـ
+        // group-exchange-sha256 لي كتحتاج round-trip إضافي باش تتفاوض
+        // على حجم الـmodulus، وهادشي كان كيخلي الـhandshake يتجاوز
+        // المؤقت ديال 4.5s بانتظام.
+        s.setConfig("kex", "diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha256," +
+            "diffie-hellman-group14-sha256,ecdh-sha2-nistp256,curve25519-sha256")
         applyKeepAlive(s)
 
         s.setSocketFactory(PayloadSocketFactory(proxyHost, proxyPort, payload, host, usePayload, useSsl, sni) { msg ->
@@ -444,9 +451,10 @@ class SshVpnService : VpnService() {
         log("Connecting...")
         val sshStart = SystemClock.elapsedRealtime()
         try {
-            // Keep the SSH handshake timeout short so a dead/overloaded server
-            // moves to the next retry quickly instead of waiting ~16s.
-            s.connect(4500)
+            // 8s كافية للـhandshake حتى مع round-trip زايد (group-exchange)
+            // على شبكة بطيئة، وفنفس الوقت مازالت قصيرة باش ما تخليش
+            // سيرفر ميت يعطل الـretry loop بزاف.
+            s.connect(8000)
             log("SSH Connect Completed. (${SystemClock.elapsedRealtime() - sshStart} ms)")
         } catch (e: Throwable) {
             log("SSH Connect Failed after ${SystemClock.elapsedRealtime() - sshStart} ms")
@@ -937,13 +945,13 @@ class SshVpnService : VpnService() {
                     val s = jsch.getSession(lastUser, lastHost, lastPort)
                     s.setPassword(lastPass)
                     s.setConfig("StrictHostKeyChecking", "no")
-                    s.setConfig("kex", "diffie-hellman-group-exchange-sha256,diffie-hellman-group14-sha256," +
-                        "ecdh-sha2-nistp256,curve25519-sha256")
+                    s.setConfig("kex", "diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha256," +
+                        "diffie-hellman-group14-sha256,ecdh-sha2-nistp256,curve25519-sha256")
                     applyKeepAlive(s)
                     s.setSocketFactory(PayloadSocketFactory(lastProxyHost, lastProxyPort, lastPayload, lastHost, lastUsePayload, lastUseSsl, lastSni) { msg ->
                         log(msg)
                     })
-                    s.connect(4500)
+                    s.connect(8000)
                     session = s
                     log("SSH Authentication Successful.")
 
