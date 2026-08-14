@@ -330,7 +330,7 @@ class SshVpnService : VpnService() {
         s.setPassword(pass)
         s.setConfig("StrictHostKeyChecking", "no")
         s.setConfig("kex", "diffie-hellman-group-exchange-sha256,diffie-hellman-group14-sha256," +
-            "ecdh-sha2-nistp256,curve25519-sha256")
+            "ecdh-sha2-nistp256,curve25519-sha256,diffie-hellman-group1-sha1,diffie-hellman-group14-sha1")
         applyKeepAlive(s)
 
         log("Creating Socket Factory...")
@@ -343,8 +343,7 @@ class SshVpnService : VpnService() {
         log("SSH Handshake Starting...")
         val sshStart = SystemClock.elapsedRealtime()
         try {
-            // ===== تعديل: timeout من 4000ms إلى 2500ms =====
-            s.connect(2500)
+            s.connect(10000)
             log("SSH Handshake Successful. (${SystemClock.elapsedRealtime() - sshStart} ms)")
         } catch (e: Throwable) {
             log("SSH Handshake Failed after ${SystemClock.elapsedRealtime() - sshStart} ms")
@@ -699,7 +698,7 @@ class SshVpnService : VpnService() {
                     s.setPassword(lastPass)
                     s.setConfig("StrictHostKeyChecking", "no")
                     s.setConfig("kex", "diffie-hellman-group-exchange-sha256,diffie-hellman-group14-sha256," +
-                        "ecdh-sha2-nistp256,curve25519-sha256")
+                        "ecdh-sha2-nistp256,curve25519-sha256,diffie-hellman-group1-sha1,diffie-hellman-group14-sha1")
                     applyKeepAlive(s)
                     
                     val socketFactory = PayloadSocketFactory(lastProxyHost, lastProxyPort, lastPayload, lastHost, lastUsePayload, lastUseSsl, lastSni) { msg ->
@@ -709,8 +708,7 @@ class SshVpnService : VpnService() {
                     log("Socket Factory Created.")
                     
                     log("SSH Handshake Starting...")
-                    // ===== تعديل: timeout من 4000ms إلى 2500ms =====
-                    s.connect(2500)
+                    s.connect(10000)
                     session = s
                     log("SSH Authentication Successful.")
 
