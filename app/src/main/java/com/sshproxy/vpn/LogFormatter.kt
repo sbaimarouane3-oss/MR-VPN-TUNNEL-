@@ -58,23 +58,28 @@ object LogFormatter {
 
     private fun isWhitelisted(body: String): Boolean {
         val l = body.lowercase()
-        // Connection progress must be visible immediately. Previously most of
-        // these lines were filtered out, so the LOG tab looked empty until
-        // "Connection Established" appeared several seconds later.
+        // Connection progress must be visible immediately.
         return l.startsWith("starting service") ||
             l.startsWith("preparing vpn engine") ||
             l.startsWith("protocol:") ||
             l.startsWith("resolving server") ||
             l.startsWith("connection setup started") ||
             l.startsWith("ssh session created") ||
+            l.startsWith("creating socket factory") ||
+            l.startsWith("socket factory created") ||
             l.startsWith("connecting") ||
             l.startsWith("tcp connecting") ||
+            l.startsWith("creating tcp socket") ||
             l.startsWith("tcp socket connected") ||
-            l.startsWith("ssl handshake successful") ||
+            l.startsWith("tcp connect") ||
+            l.startsWith("ssl handshake") ||
             l.startsWith("sending payload") ||
             l.startsWith("payload sent") ||
             l.startsWith("payload accepted") ||
+            l.startsWith("payload send") ||
+            l.startsWith("socket factory ready") ||
             l.startsWith("ssh connect") ||
+            l.startsWith("ssh handshake") ||
             l.startsWith("ssh authentication") ||
             l.startsWith("creating vpn interface") ||
             l.startsWith("vpn interface created") ||
