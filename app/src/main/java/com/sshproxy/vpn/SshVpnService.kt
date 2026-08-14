@@ -39,9 +39,6 @@ class SshVpnService : VpnService() {
         const val ACTION_LOG = "com.sshproxy.vpn.LOG"
         const val EXTRA_LOG_MESSAGE = "message"
 
-        // Connection-state broadcast (independent from the text log) so the
-        // UI (MainActivity) can show CONNECTING / READY / RECONNECTING /
-        // WAITING_NETWORK without parsing log text.
         const val ACTION_STATUS = "com.sshproxy.vpn.STATUS"
         const val EXTRA_STATE = "state"
         const val STATE_CONNECTING = "CONNECTING"
@@ -50,23 +47,14 @@ class SshVpnService : VpnService() {
         const val STATE_WAITING_NETWORK = "WAITING_NETWORK"
         const val STATE_DISCONNECTED = "DISCONNECTED"
         const val STATE_FAILED = "FAILED"
-        // Reached only after auto-reconnect has kept failing continuously for
-        // MAX_AUTO_RECONNECT_WINDOW_MS - stops silently retrying forever and
-        // asks the user to tap Connect again themselves.
         const val STATE_WAITING_USER_ACTION = "WAITING_USER_ACTION"
 
-        // نوع الاتصال - إضافة جديدة بلا ما تمس السلوك الافتراضي (SSH يبقى
-        // الافتراضي إذا الـextra ماجاش، بحال كان الوضع قبل هاد التعديل).
         const val EXTRA_MODE = "mode"
         const val MODE_SSH = "SSH"
         const val MODE_XRAY = "XRAY"
-        // JSON ديال ParsedProxyConfig.toJson() - مبني من طرف MainActivity/
-        // الاستيراد قبل ما يبدا الـservice.
         const val EXTRA_XRAY_CONFIG = "xrayParsedConfigJson"
 
-        private const val MAX_AUTO_RECONNECT_WINDOW_MS = 60 * 60 * 1000L // 1 hour
-
-        // Xray connection-health probe interval
+        private const val MAX_AUTO_RECONNECT_WINDOW_MS = 60 * 60 * 1000L
         private const val XRAY_PING_INTERVAL_MS = 5000L
 
         private const val CHANNEL_ID = "vpn_status"
@@ -193,7 +181,6 @@ class SshVpnService : VpnService() {
 
         mode = intent?.getStringExtra(EXTRA_MODE) ?: MODE_SSH
 
-        // ===== V2Ray / Xray path =====
         if (mode == MODE_XRAY) {
             val parsedJson = intent?.getStringExtra(EXTRA_XRAY_CONFIG)
             if (parsedJson.isNullOrBlank()) {
@@ -245,7 +232,6 @@ class SshVpnService : VpnService() {
             }
             return START_STICKY
         }
-        // ===== End V2Ray/Xray path =====
 
         val host = intent?.getStringExtra("host") ?: return START_NOT_STICKY
         val port = intent.getIntExtra("port", 443)
@@ -347,7 +333,6 @@ class SshVpnService : VpnService() {
             "ecdh-sha2-nistp256,curve25519-sha256")
         applyKeepAlive(s)
 
-        // ===== ENTERING SOCKET FACTORY =====
         log("Creating Socket Factory...")
         val socketFactory = PayloadSocketFactory(proxyHost, proxyPort, payload, host, usePayload, useSsl, sni) { msg ->
             log(msg)
@@ -355,12 +340,11 @@ class SshVpnService : VpnService() {
         s.setSocketFactory(socketFactory)
         log("Socket Factory Created.")
 
-        // ===== STARTING SSH HANDSHAKE =====
         log("SSH Handshake Starting...")
         val sshStart = SystemClock.elapsedRealtime()
         try {
-            // JSch will call socketFactory.createSocket() internally here
-            s.connect(4000)
+            // ===== تعديل: timeout من 4000ms إلى 2500ms =====
+            s.connect(2500)
             log("SSH Handshake Successful. (${SystemClock.elapsedRealtime() - sshStart} ms)")
         } catch (e: Throwable) {
             log("SSH Handshake Failed after ${SystemClock.elapsedRealtime() - sshStart} ms")
@@ -725,7 +709,8 @@ class SshVpnService : VpnService() {
                     log("Socket Factory Created.")
                     
                     log("SSH Handshake Starting...")
-                    s.connect(4000)
+                    // ===== تعديل: timeout من 4000ms إلى 2500ms =====
+                    s.connect(2500)
                     session = s
                     log("SSH Authentication Successful.")
 
