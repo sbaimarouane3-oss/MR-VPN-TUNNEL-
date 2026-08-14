@@ -59,8 +59,25 @@ object LogFormatter {
             l.contains("waiting for network") || l.contains("failed")
     }
 
+    // Device/network info lines written once per session by
+    // SshVpnService.logDeviceAndNetworkInfo() (app version, device model,
+    // Android version, network name/carrier, local IP) - matched separately
+    // from isWhitelisted() because the network label itself is variable
+    // text (carrier name, "Wi-Fi", "Ethernet", "Unknown Network"...) and
+    // can't be matched with a single startsWith().
+    private fun isDeviceNetworkInfoLine(body: String): Boolean {
+        val l = body.lowercase()
+        return l.startsWith("mr vpn tunnel v") ||
+            l.startsWith("running on") ||
+            l.startsWith("android ") ||
+            l.startsWith("local ip") ||
+            l == "wi-fi" || l == "ethernet" || l == "unknown network" ||
+            l.contains("/ mobile data")
+    }
+
     private fun isWhitelisted(body: String): Boolean {
         val l = body.lowercase()
+        if (isDeviceNetworkInfoLine(body)) return true
         // Connection progress must be visible immediately. Previously most of
         // these lines were filtered out, so the LOG tab looked empty until
         // "Connection Established" appeared several seconds later.
