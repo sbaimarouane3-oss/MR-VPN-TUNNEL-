@@ -33,7 +33,7 @@ class PayloadSocketFactory(
     private val onLog: (String) -> Unit
 ) : SocketFactory {
 
-    // السوكيت "الفعلي" لي كيتقرا/يتكتب منو فعلا - سوكيت TLS إلا كان useSsl
+    // السوكيت "الفعلي" لي كتقرا/تكتب منو فعلا - سوكيت TLS إلا كان useSsl
     // مفعّل، أو نفس السوكيت الخام إلا لا. جيتش كيسول getInputStream/
     // getOutputStream بالسوكيت الأصلي اللي رجّعناه من createSocket، ماشي
     // بالضرورة بالسوكيت المستعمل فعليا - فكنخزنو مرجع ليه هنا.
@@ -49,6 +49,9 @@ class PayloadSocketFactory(
     override fun createSocket(host: String, port: Int): Socket {
         val totalStart = SystemClock.elapsedRealtime()
         var socket: Socket = Socket()
+        
+        onLog("TCP Connecting...")
+        
         try {
             // TCP-level KeepAlive as a second line of defense under the
             // SSH-level ServerAlive settings: lets the OS detect a truly dead
@@ -59,39 +62,48 @@ class PayloadSocketFactory(
             socket.tcpNoDelay = true
             socket.setPerformancePreferences(0, 2, 1) // prioritize low latency over bandwidth/connect-time
         } catch (_: Throwable) { }
-        onLog("TCP Connecting...")
+        
+        val connectStart = SystemClock.elapsedRealtime()
         try {
-            socket.connect(InetSocketAddress(proxyHost, proxyPort), 2000)
+            socket.connect(InetSocketAddress(proxyHost, proxyPort), 1500)
         } catch (e: Throwable) {
             try { socket.close() } catch (_: Throwable) {}
+            onLog("TCP Connect Failed. (${SystemClock.elapsedRealtime() - connectStart} ms)")
             throw e
         }
-        onLog("TCP Socket Connected. (${SystemClock.elapsedRealtime() - totalStart} ms)")
+        onLog("TCP Socket Connected. (${SystemClock.elapsedRealtime() - connectStart} ms)")
 
         if (useSsl) {
             val sslStart = SystemClock.elapsedRealtime()
-            socket = wrapWithSsl(socket, sslSni.ifBlank { sniHost })
-            onLog("SSL Handshake Successful. (${SystemClock.elapsedRealtime() - sslStart} ms)")
+            onLog("SSL Handshake Starting...")
+            try {
+                socket = wrapWithSsl(socket, sslSni.ifBlank { sniHost })
+                onLog("SSL Handshake Successful. (${SystemClock.elapsedRealtime() - sslStart} ms)")
+            } catch (e: Throwable) {
+                onLog("SSL Handshake Failed. (${SystemClock.elapsedRealtime() - sslStart} ms)")
+                throw e
+            }
         }
 
         if (usePayload && payloadTemplate.isNotBlank()) {
+            val payloadStart = SystemClock.elapsedRealtime()
+            onLog("Sending Payload...")
+            
             val payload = payloadTemplate
                 .replace("[crlf]", "\r\n")
                 .replace("[lf]", "\n")
                 .replace("[host]", sniHost)
                 .replace("[split]", "")
 
-            socket.getOutputStream().write(payload.toByteArray(Charsets.ISO_8859_1))
-            socket.getOutputStream().flush()
-            onLog("Payload Sent.")
-
-            // IMPORTANT: do not wait for HTTP response headers here.
-            // Some payload/proxy servers stay silent until SSH starts, while
-            // others send an HTTP response that JSch must consume correctly.
-            // Reading here can block for several seconds and was the main
-            // reason a failed attempt could take ~16 seconds. JSch now owns
-            // the SSH handshake immediately after the payload is sent.
-            onLog("Payload Accepted.")
+            try {
+                socket.getOutputStream().write(payload.toByteArray(Charsets.ISO_8859_1))
+                socket.getOutputStream().flush()
+                onLog("Payload Sent. (${SystemClock.elapsedRealtime() - payloadStart} ms)")
+                onLog("Payload Accepted.")
+            } catch (e: Throwable) {
+                onLog("Payload Send Failed.")
+                throw e
+            }
         }
 
         activeSocket = socket
@@ -119,7 +131,7 @@ class PayloadSocketFactory(
         // Limit the TLS handshake separately. The JSch connect timeout does
         // not fully cover the TLS handshake performed inside SocketFactory,
         // so leaving this unlimited can make SSH-TLS attempts stack up.
-        try { sslSocket.soTimeout = 2500 } catch (_: Throwable) {}
+        try { sslSocket.soTimeout = 1500 } catch (_: Throwable) {}
         try {
             sslSocket.startHandshake()
         } catch (e: Throwable) {
@@ -130,20 +142,6 @@ class PayloadSocketFactory(
             try { sslSocket.soTimeout = 0 } catch (_: Throwable) {}
         }
         return sslSocket
-    }
-
-    /** كتقرا هيدرز الـ HTTP response بلا ما تسجل محتواها الخام (يقدر يحتوي على host/proxy معلومات). */
-    private fun readHttpHeaders(socket: Socket): String? {
-        val input = socket.getInputStream()
-        val buf = StringBuilder()
-        while (true) {
-            val b = input.read()
-            if (b == -1) break
-            buf.append(b.toChar())
-            if (buf.length >= 4 && buf.substring(buf.length - 4) == "\r\n\r\n") break
-            if (buf.length > 8192) break // حماية من infinite loop
-        }
-        return buf.toString().lineSequence().firstOrNull()?.trim()
     }
 
     override fun getInputStream(socket: Socket): InputStream = (activeSocket ?: socket).getInputStream()
