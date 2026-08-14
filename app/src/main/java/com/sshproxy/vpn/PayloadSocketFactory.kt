@@ -13,15 +13,6 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.X509TrustManager
 
-/**
- * كيدير Socket عادي، كيبعث Payload (HTTP GET/websocket upgrade) قبل ما يبدا SSH handshake.
- * هادشي هو نفس المبدأ ديال HTTP Custom / SSH-PROXY-PAYLOAD.
- *
- * إلا كان useSsl مفعّل، كنلفو التواصل بـ TLS (SNI قابل للتخصيص) قبل ما نبداو أي
- * Payload أو SSH handshake - هادشي هو بروتوكول "SSH-SSL" بحال SSL checkbox
- * فـ HTTP Custom / NPV Tunnel. Payload والـ SSL مستقلين عن بعضياتهم بالضبط
- * بحال فالتطبيقات الأخرى: يمكن تفعّل واحد منهما، بجوج، ولا حتى واحد.
- */
 class PayloadSocketFactory(
     private val proxyHost: String,
     private val proxyPort: Int,
@@ -33,13 +24,8 @@ class PayloadSocketFactory(
     private val onLog: (String) -> Unit
 ) : SocketFactory {
 
-    // السوكيت "الفعلي" لي كتقرا/تكتب منو فعلا - سوكيت TLS إلا كان useSsl
-    // مفعّل، أو نفس السوكيت الخام إلا لا. جيتش كيسول getInputStream/
-    // getOutputStream بالسوكيت الأصلي اللي رجّعناه من createSocket، ماشي
-    // بالضرورة بالسوكيت المستعمل فعليا - فكنخزنو مرجع ليه هنا.
     private var activeSocket: Socket? = null
 
-    /** TrustManager بلا تحقق من الشهادة - نفس المبدأ ديال StrictHostKeyChecking=no فالكود الحالي. */
     private object TrustAllManager : X509TrustManager {
         override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
         override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
@@ -47,50 +33,50 @@ class PayloadSocketFactory(
     }
 
     override fun createSocket(host: String, port: Int): Socket {
-        // ===== IMPORTANT: Log immediately when called =====
-        onLog("PayloadSocketFactory: createSocket() called for $host:$port")
+        // ===== DEBUG: اطبع في Logcat مباشرة =====
+        android.util.Log.d("PSF", "===== createSocket() START for $host:$port =====")
         
         val totalStart = SystemClock.elapsedRealtime()
         var socket: Socket = Socket()
         
+        android.util.Log.d("PSF", "TCP Connecting to $proxyHost:$proxyPort...")
         onLog("TCP Connecting to $proxyHost:$proxyPort...")
         
         try {
-            // TCP-level KeepAlive as a second line of defense under the
-            // SSH-level ServerAlive settings: lets the OS detect a truly dead
-            // link (e.g. NAT/carrier silently drops the mapping) without
-            // waiting on the SSH layer alone. TcpNoDelay avoids Nagle-related
-            // latency spikes on the small, frequent SSH/SOCKS packets.
             socket.keepAlive = true
             socket.tcpNoDelay = true
-            socket.setPerformancePreferences(0, 2, 1) // prioritize low latency over bandwidth/connect-time
+            socket.setPerformancePreferences(0, 2, 1)
         } catch (_: Throwable) { }
         
         val connectStart = SystemClock.elapsedRealtime()
         try {
             socket.connect(InetSocketAddress(proxyHost, proxyPort), 1500)
+            android.util.Log.d("PSF", "TCP Connected in ${SystemClock.elapsedRealtime() - connectStart} ms")
+            onLog("TCP Socket Connected. (${SystemClock.elapsedRealtime() - connectStart} ms)")
         } catch (e: Throwable) {
-            try { socket.close() } catch (_: Throwable) {}
+            android.util.Log.d("PSF", "TCP Connect FAILED: ${e.javaClass.simpleName}: ${e.message}")
             onLog("TCP Connect Failed. (${SystemClock.elapsedRealtime() - connectStart} ms)")
+            try { socket.close() } catch (_: Throwable) {}
             throw e
         }
-        onLog("TCP Socket Connected. (${SystemClock.elapsedRealtime() - connectStart} ms)")
 
         if (useSsl) {
+            android.util.Log.d("PSF", "SSL Handshake Starting...")
             val sslStart = SystemClock.elapsedRealtime()
-            onLog("SSL Handshake Starting...")
             try {
                 socket = wrapWithSsl(socket, sslSni.ifBlank { sniHost })
+                android.util.Log.d("PSF", "SSL Handshake OK in ${SystemClock.elapsedRealtime() - sslStart} ms")
                 onLog("SSL Handshake Successful. (${SystemClock.elapsedRealtime() - sslStart} ms)")
             } catch (e: Throwable) {
+                android.util.Log.d("PSF", "SSL Handshake FAILED: ${e.javaClass.simpleName}: ${e.message}")
                 onLog("SSL Handshake Failed. (${SystemClock.elapsedRealtime() - sslStart} ms)")
                 throw e
             }
         }
 
         if (usePayload && payloadTemplate.isNotBlank()) {
+            android.util.Log.d("PSF", "Sending Payload...")
             val payloadStart = SystemClock.elapsedRealtime()
-            onLog("Sending Payload...")
             
             val payload = payloadTemplate
                 .replace("[crlf]", "\r\n")
@@ -101,20 +87,22 @@ class PayloadSocketFactory(
             try {
                 socket.getOutputStream().write(payload.toByteArray(Charsets.ISO_8859_1))
                 socket.getOutputStream().flush()
+                android.util.Log.d("PSF", "Payload Sent in ${SystemClock.elapsedRealtime() - payloadStart} ms")
                 onLog("Payload Sent. (${SystemClock.elapsedRealtime() - payloadStart} ms)")
                 onLog("Payload Accepted.")
             } catch (e: Throwable) {
+                android.util.Log.d("PSF", "Payload Send FAILED: ${e.javaClass.simpleName}: ${e.message}")
                 onLog("Payload Send Failed.")
                 throw e
             }
         }
 
         activeSocket = socket
+        android.util.Log.d("PSF", "===== createSocket() END in ${SystemClock.elapsedRealtime() - totalStart} ms =====")
         onLog("Socket Factory Ready. (${SystemClock.elapsedRealtime() - totalStart} ms total)")
         return socket
     }
 
-    /** كيلف سوكيت TCP خام بـ TLS (SNI قابل للتخصيص)، بلا تحقق من الشهادة. */
     private fun wrapWithSsl(plain: Socket, sniName: String): SSLSocket {
         val sslContext = SSLContext.getInstance("TLS")
         sslContext.init(null, arrayOf(TrustAllManager), SecureRandom())
@@ -126,14 +114,8 @@ class PayloadSocketFactory(
             val params = sslSocket.sslParameters
             params.serverNames = listOf(SNIHostName(sniName))
             sslSocket.sslParameters = params
-        } catch (_: Throwable) {
-            // SNI setting best-effort only - some devices/older TLS stacks
-            // don't support it; the handshake below still proceeds normally.
-        }
+        } catch (_: Throwable) { }
 
-        // Limit the TLS handshake separately. The JSch connect timeout does
-        // not fully cover the TLS handshake performed inside SocketFactory,
-        // so leaving this unlimited can make SSH-TLS attempts stack up.
         try { sslSocket.soTimeout = 1500 } catch (_: Throwable) {}
         try {
             sslSocket.startHandshake()
@@ -141,7 +123,6 @@ class PayloadSocketFactory(
             try { sslSocket.close() } catch (_: Throwable) {}
             throw e
         } finally {
-            // JSch will apply its own SSH timeout after the socket is returned.
             try { sslSocket.soTimeout = 0 } catch (_: Throwable) {}
         }
         return sslSocket
