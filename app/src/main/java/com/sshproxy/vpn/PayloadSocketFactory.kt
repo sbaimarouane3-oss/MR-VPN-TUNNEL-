@@ -85,12 +85,29 @@ class PayloadSocketFactory(
             socket.getOutputStream().flush()
             onLog("Payload Sent.")
 
-            // IMPORTANT: do not wait for HTTP response headers here.
-            // Some payload/proxy servers stay silent until SSH starts, while
-            // others send an HTTP response that JSch must consume correctly.
-            // Reading here can block for several seconds and was the main
-            // reason a failed attempt could take ~16 seconds. JSch now owns
-            // the SSH handshake immediately after the payload is sent.
+            // Some payload/proxy servers (e.g. classic SSH-PROXY-PAYLOAD /
+            // HTTP Custom style servers) reply with an HTTP status line
+            // (e.g. "HTTP/1.1 101 Switching Protocols") before they open the
+            // raw tunnel. If we hand the socket to JSch without consuming
+            // that response first, JSch reads those HTTP bytes as if they
+            // were the SSH banner and the handshake fails immediately -
+            // this is the main cause of SSH-PROXY-PAYLOAD breaking.
+            //
+            // Other servers stay completely silent until SSH starts, so we
+            // bound this read with a short timeout instead of blocking
+            // indefinitely (that unbounded block was the ~16s issue this
+            // code originally tried to avoid).
+            val previousTimeout = try { socket.soTimeout } catch (_: Throwable) { 0 }
+            try {
+                socket.soTimeout = 2500
+                val status = readHttpHeaders(socket)
+                if (!status.isNullOrBlank()) onLog(status)
+            } catch (_: Throwable) {
+                // Timeout or read error: server is likely silent-until-SSH,
+                // proceed and let JSch take over below.
+            } finally {
+                try { socket.soTimeout = previousTimeout } catch (_: Throwable) {}
+            }
             onLog("Payload Accepted.")
         }
 
