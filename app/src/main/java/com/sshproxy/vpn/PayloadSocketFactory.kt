@@ -5,6 +5,7 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
+import android.os.SystemClock
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import javax.net.ssl.SNIHostName
@@ -46,6 +47,7 @@ class PayloadSocketFactory(
     }
 
     override fun createSocket(host: String, port: Int): Socket {
+        val totalStart = SystemClock.elapsedRealtime()
         var socket: Socket = Socket()
         try {
             // TCP-level KeepAlive as a second line of defense under the
@@ -61,8 +63,9 @@ class PayloadSocketFactory(
         onLog("TCP Socket Connected.")
 
         if (useSsl) {
+            val sslStart = SystemClock.elapsedRealtime()
             socket = wrapWithSsl(socket, sslSni.ifBlank { sniHost })
-            onLog("SSL Handshake Successful.")
+            onLog("SSL Handshake Successful. (${SystemClock.elapsedRealtime() - sslStart} ms)")
         }
 
         if (usePayload && payloadTemplate.isNotBlank()) {
@@ -83,10 +86,10 @@ class PayloadSocketFactory(
                 val status = readHttpHeaders(socket) ?: break
                 if (status.contains("101") || status.contains("Connection Established")) break
             }
-            onLog("Payload Accepted.")
         }
 
         activeSocket = socket
+        onLog("Socket Factory Ready. (${SystemClock.elapsedRealtime() - totalStart} ms total)")
         return socket
     }
 
