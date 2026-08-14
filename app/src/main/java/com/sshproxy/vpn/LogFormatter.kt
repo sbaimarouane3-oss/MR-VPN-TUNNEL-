@@ -24,7 +24,7 @@ object LogFormatter {
         Regex("""^Ping:\s*(\d+)ms\s*(OK|FAILED)\.?""", RegexOption.IGNORE_CASE)
 
     // ============================================================
-    // IMPORTANT: All log messages that should NEVER appear
+    // HIDE: رسائل داخلية فقط - لا تظهر في الواجهة
     // ============================================================
     private val HIDE_CONTAINS = listOf(
         "crash guard",
@@ -34,7 +34,7 @@ object LogFormatter {
         "parsing config",
         "verifying internet connectivity",
         "debug",
-        "payloadsocketfactory"  // hide internal debug line
+        "payloadsocketfactory"
     )
 
     private fun isAlwaysVisible(body: String): Boolean {
@@ -46,78 +46,87 @@ object LogFormatter {
     }
 
     // ============================================================
-    // WHITELIST - All log messages that should appear in the UI
-    // ADD ANY NEW MESSAGE HERE
+    // WHITELIST: جميع الرسائل التي تظهر في الواجهة
     // ============================================================
     private fun isWhitelisted(body: String): Boolean {
         val l = body.lowercase()
         
-        // ---- SERVICE LIFECYCLE ----
+        // Service lifecycle
         if (l.startsWith("starting service")) return true
         if (l.startsWith("preparing vpn engine")) return true
         
-        // ---- PROTOCOL ----
+        // Protocol
         if (l.startsWith("protocol:")) return true
         if (l.startsWith("resolving server")) return true
         if (l.startsWith("connection setup started")) return true
         
-        // ---- SSH SESSION ----
+        // SSH Session
         if (l.startsWith("ssh session created")) return true
         
-        // ---- SOCKET FACTORY ----
+        // Socket Factory
         if (l.startsWith("creating socket factory")) return true
         if (l.startsWith("socket factory created")) return true
         
-        // ---- TCP CONNECTION ----
+        // TCP Connection
         if (l.startsWith("tcp connecting")) return true
         if (l.startsWith("creating tcp socket")) return true
         if (l.startsWith("tcp socket connected")) return true
         if (l.startsWith("tcp connect failed")) return true
         
-        // ---- SSL/TLS ----
+        // SSL/TLS
         if (l.startsWith("ssl handshake")) return true
         
-        // ---- PAYLOAD ----
+        // Payload
         if (l.startsWith("sending payload")) return true
         if (l.startsWith("payload sent")) return true
         if (l.startsWith("payload accepted")) return true
         if (l.startsWith("payload send failed")) return true
         
-        // ---- SOCKET FACTORY READY ----
+        // Socket Factory Ready
         if (l.startsWith("socket factory ready")) return true
         
-        // ---- SSH HANDSHAKE ----
+        // SSH Handshake
         if (l.startsWith("ssh handshake")) return true
         if (l.startsWith("ssh connect")) return true
         
-        // ---- SSH AUTHENTICATION ----
+        // SSH Authentication
         if (l.startsWith("ssh authentication")) return true
         
-        // ---- SOCKS5 ----
+        // SOCKS5
         if (l.startsWith("socks5 proxy ready")) return true
         
-        // ---- VPN INTERFACE ----
+        // VPN Interface
         if (l.startsWith("creating vpn interface")) return true
         if (l.startsWith("vpn interface created")) return true
         
-        // ---- TUNNEL ----
+        // Tunnel
         if (l.startsWith("tunnel started successfully")) return true
         
-        // ---- CONNECTION ESTABLISHED ----
+        // Connection Established
         if (l.contains("connection established")) return true
         
-        // ---- PING ----
+        // Ping
         if (l.startsWith("ping:")) return true
         
-        // ---- RECONNECT ----
+        // Reconnect
         if (l.startsWith("reconnecting")) return true
         
-        // ---- UDPGW ----
+        // UDPGW
         if (l.startsWith("udpgw forward ready")) return true
         if (l.startsWith("warn: udpgw")) return true
         
-        // ---- XRAY ----
+        // XRAY
         if (l.startsWith("xray:")) return true
+        
+        // PROXY - جميع رسائل Proxy Sharing
+        if (l.contains("sharing started")) return true
+        if (l.contains("listen:")) return true
+        if (l.contains("backend:")) return true
+        if (l.contains("local endpoint:")) return true
+        if (l.contains("proxy ip:")) return true
+        if (l.contains("proxy port:")) return true
+        if (l.contains("ready for hotspot clients")) return true
+        if (l.startsWith("[proxy]")) return true
         
         return false
     }
@@ -151,7 +160,14 @@ object LogFormatter {
                 body = line
             }
 
-            val isProxyLine = tag.equals("PROXY", ignoreCase = true)
+            val isProxyLine = tag.equals("PROXY", ignoreCase = true) ||
+                body.contains("Sharing Started", ignoreCase = true) ||
+                body.contains("Ready for Hotspot Clients", ignoreCase = true) ||
+                body.contains("Listen:", ignoreCase = true) ||
+                body.contains("Backend:", ignoreCase = true) ||
+                body.contains("Local Endpoint:", ignoreCase = true) ||
+                body.contains("Proxy IP:", ignoreCase = true) ||
+                body.contains("Proxy Port:", ignoreCase = true)
 
             if (!isProxyLine) {
                 if (HIDE_CONTAINS.any { body.contains(it, ignoreCase = true) }) continue
@@ -238,6 +254,9 @@ object LogFormatter {
         val colonIndex = body.indexOf(':')
         when {
             body.contains("Ready for Hotspot Clients", ignoreCase = true) -> {
+                appendColored(out, body, COLOR_GREEN, bold = true)
+            }
+            body.contains("Sharing Started", ignoreCase = true) -> {
                 appendColored(out, body, COLOR_GREEN, bold = true)
             }
             body.startsWith("ERROR", ignoreCase = true) || body.startsWith("WARN", ignoreCase = true) -> {
