@@ -56,6 +56,7 @@ object LogFormatter {
         val l = body.lowercase()
         return l.contains("error") || l.contains("fatal") || l.contains("warn") ||
             l.contains("disconnected") || l.contains("reconnecting") ||
+            l.contains("retrying") ||
             l.contains("waiting for network") || l.contains("failed")
     }
 
