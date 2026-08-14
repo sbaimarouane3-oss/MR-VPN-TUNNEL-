@@ -30,8 +30,11 @@ object LogFormatter {
 
     private const val PING_THROTTLE_SECONDS = 30
 
+    // ملحوظة: التاگ كيقدر يحتوي على "-" (SSH-DIRECT, SSH-PROXY-PAYLOAD...)
+    // خاصنا [\w-]+ وماشي \w+ وحدها، حيت \w ماكيشملش الشارطة "-" فكانت
+    // هاد التاگات كاملين ماكيتقراوش (كيبقاو بلا تغيير جوج البادي).
     private val LINE_REGEX =
-        Regex("""^\[(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?]\s*(?:\[(\w+)]\s*)?(.*)$""")
+        Regex("""^\[(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?]\s*(?:\[([\w-]+)]\s*)?(.*)$""")
     private val PING_REGEX =
         Regex("""^Ping:\s*(\d+)ms\s*(OK|FAILED)\.?""", RegexOption.IGNORE_CASE)
 
@@ -91,10 +94,17 @@ object LogFormatter {
      * only differ in how they render the result - so the two outputs can
      * never diverge in *content*, only in styling.
      *
-     * @return list of (timeText, body, isProxyLine) for every visible line, in order.
+     * @return list of (timeText, tag, body, isProxyLine) for every visible line, in order.
      */
-    private fun selectVisibleLines(raw: String): List<Triple<String, String, Boolean>> {
-        val result = mutableListOf<Triple<String, String, Boolean>>()
+    private data class VisibleLine(
+        val timeText: String,
+        val tag: String,
+        val body: String,
+        val isProxyLine: Boolean
+    )
+
+    private fun selectVisibleLines(raw: String): List<VisibleLine> {
+        val result = mutableListOf<VisibleLine>()
         var lastPingSeconds: Int? = null
         var lastPingWasOk: Boolean? = null
 
@@ -145,7 +155,7 @@ object LogFormatter {
                 if (!show) continue
             }
 
-            result.add(Triple(timeText, body, isProxyLine))
+            result.add(VisibleLine(timeText, tag, body, isProxyLine))
         }
 
         return result
@@ -157,10 +167,10 @@ object LogFormatter {
     fun format(raw: String): SpannableStringBuilder {
         val out = SpannableStringBuilder()
         var firstLine = true
-        for ((timeText, body, isProxyLine) in selectVisibleLines(raw)) {
+        for (line in selectVisibleLines(raw)) {
             if (!firstLine) out.append("\n")
             firstLine = false
-            appendLine(out, timeText, body, isProxyLine)
+            appendLine(out, line.timeText, line.tag, line.body, line.isProxyLine)
         }
         return out
     }
@@ -172,18 +182,18 @@ object LogFormatter {
      * Connection Log tab.
      */
     fun formatPlain(raw: String): String {
-        val lines = selectVisibleLines(raw).map { (timeText, body, _) ->
-            val displayBody = if (body.contains("Connection Established", ignoreCase = true)) {
-                "Connected \u2713"
+        val lines = selectVisibleLines(raw).map { line ->
+            val displayBody = if (line.body.contains("Connection Established", ignoreCase = true)) {
+                if (line.tag.isNotEmpty() && !line.isProxyLine) "[${line.tag}] Connected \u2713" else "Connected \u2713"
             } else {
-                body
+                line.body
             }
-            if (timeText.isNotEmpty()) "[$timeText] $displayBody" else displayBody
+            if (line.timeText.isNotEmpty()) "[${line.timeText}] $displayBody" else displayBody
         }
         return lines.joinToString("\n")
     }
 
-    private fun appendLine(out: SpannableStringBuilder, timeText: String, body: String, isProxyLine: Boolean) {
+    private fun appendLine(out: SpannableStringBuilder, timeText: String, tag: String, body: String, isProxyLine: Boolean) {
         val start = out.length
         if (timeText.isNotEmpty()) {
             out.append("[$timeText] ")
@@ -193,6 +203,9 @@ object LogFormatter {
         when {
             isProxyLine -> appendProxyLine(out, body)
             body.contains("Connection Established", ignoreCase = true) -> {
+                if (tag.isNotEmpty()) {
+                    appendColored(out, "[$tag] ", COLOR_WHITE, bold = true)
+                }
                 appendColored(out, "Connected \u2713", COLOR_GREEN, bold = true)
             }
             body.contains("error", ignoreCase = true) || body.contains("fatal", ignoreCase = true) -> {
