@@ -194,6 +194,25 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // ===== إصلاح "أيقونة تلغرام/واتساب عالقة فوق التطبيق فـ Recents" =====
+        // ملي تلغرام/واتساب كيفتحو ملف .ml بـACTION_VIEW/ACTION_SEND بلا
+        // FLAG_ACTIVITY_NEW_TASK، Android بعض المرات كيلصق هاد الـ Activity
+        // فنفس الـ task ديال التطبيق المصدر بدل ما يخلق task جديدة خاصة
+        // بيها - رغم launchMode="singleTask". isTaskRoot=false هو العلامة
+        // على هاد الحالة بالضبط. الحل: نسدو هاد الـ instance ونعاودو نطلقو
+        // نفس الـ Intent من جديد - هادشي كيجبر Android يبدا task جديدة
+        // نظيفة (هي لي غادي تولي isTaskRoot=true فالمرة الجاية) بلا أي
+        // ارتباط بـtask ديال تلغرام/واتساب، فتختفي الأيقونة العالقة فـ
+        // Recents. onCreate غادي يتعاود من جديد تلقائيا مع الـ instance
+        // الجديدة، فـhandleIntentUriIfPresent(intent) تحت غادي تخدم بحالها
+        // ديما.
+        if ((intent?.action == Intent.ACTION_VIEW || intent?.action == Intent.ACTION_SEND) && !isTaskRoot) {
+            finish()
+            startActivity(intent)
+            return
+        }
+
         handleIntentUriIfPresent(intent)
 
         val root = findViewById<View>(android.R.id.content)
