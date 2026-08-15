@@ -552,26 +552,50 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * كينظف الـ Intent الحالي ديال هاد الـ Activity من أي أثر ديال
+     * ACTION_VIEW/ACTION_SEND الجاي من تلغرام/واتساب (action, data,
+     * extras) ويعوضو بـ Intent عادي بحال ما يكون التطبيق تحل من
+     * اللانشر مباشرة. بلا هاد الخطوة، getIntent() كيبقى شاد فبالو
+     * نية المصدر (تلغرام/واتساب) طول ما الـ Activity حية - وهو اللي
+     * كان كيخلي أيقونة تلغرام/واتساب تبقى بادية عالقة فوق التطبيق فـ
+     * Recents، وكيخلي أي إعادة قراءة لـintent (بحال بعد rotation) تعاود
+     * تفتح نفس الملف من جديد بلا داعي.
+     */
+    private fun clearIncomingIntentLinkage() {
+        val cleanIntent = Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+            setClass(this@MainActivity, MainActivity::class.java)
+        }
+        setIntent(cleanIntent)
+    }
+
+    /**
      * كيقرا ملف .ml جاي من نية VIEW خارجية (تلغرام/واتساب/أي مدير ملفات) -
      * إلا محمي بكلمة سر كنطلبوها، وإلا لا كنعمرو الحقول ونتصلو مباشرة.
      * بلا ما نمسو أي حاجة فمنطق الاتصال نفسو (applyFieldsAndConnect
      * كتعتمد على نفس tryConnect/startVpnService الموجودين ديجا).
      */
     private fun handleIncomingConfigFile(uri: Uri) {
-        val bytes = ConfigStorageManager.readBytes(applicationContext, uri)
-        if (bytes == null) {
-            Toast.makeText(this, "Could not read config file.", Toast.LENGTH_SHORT).show()
-            return
-        }
-        try {
-            if (MlConfigFile.isEncrypted(bytes)) {
-                promptPasswordForIncomingFile(bytes)
-            } else {
-                val parsed = MlConfigFile.parse(bytes, null)
-                applyFieldsAndConnect(parsed.fields, parsed.serverMessage, isProtected = false)
+        lifecycleScope.launch {
+            val bytes = withContext(Dispatchers.IO) { ConfigStorageManager.readBytes(applicationContext, uri) }
+            // كيف ما كانت النتيجة (نجحات القراءة أو لا)، خاص الـ Intent
+            // يتنظف مباشرة هنا - الملف تقرا ديجا (bytes) ولا خاصنا ما
+            // خصناش نبقاو مرتبطين بنية تلغرام/واتساب.
+            clearIncomingIntentLinkage()
+            if (bytes == null) {
+                Toast.makeText(this@MainActivity, "Could not read config file.", Toast.LENGTH_SHORT).show()
+                return@launch
             }
-        } catch (_: Throwable) {
-            Toast.makeText(this, "Invalid or corrupted MR VPN TUNNEL config file.", Toast.LENGTH_SHORT).show()
+            try {
+                if (MlConfigFile.isEncrypted(bytes)) {
+                    promptPasswordForIncomingFile(bytes)
+                } else {
+                    val parsed = MlConfigFile.parse(bytes, null)
+                    applyFieldsAndConnect(parsed.fields, parsed.serverMessage, isProtected = false)
+                }
+            } catch (_: Throwable) {
+                Toast.makeText(this@MainActivity, "Invalid or corrupted MR VPN TUNNEL config file.", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -585,13 +609,16 @@ class MainActivity : AppCompatActivity() {
             .setMessage("This config is password protected. Enter the password to open and connect.")
             .setView(input)
             .setPositiveButton("Open") { _, _ ->
-                try {
-                    val parsed = MlConfigFile.parse(bytes, input.text.toString())
-                    applyFieldsAndConnect(parsed.fields, parsed.serverMessage, isProtected = true)
-                } catch (_: MlConfigParseException) {
-                    Toast.makeText(this, "Wrong password.", Toast.LENGTH_SHORT).show()
-                } catch (_: Throwable) {
-                    Toast.makeText(this, "Wrong password.", Toast.LENGTH_SHORT).show()
+                val password = input.text.toString()
+                lifecycleScope.launch {
+                    try {
+                        val parsed = withContext(Dispatchers.Default) { MlConfigFile.parse(bytes, password) }
+                        applyFieldsAndConnect(parsed.fields, parsed.serverMessage, isProtected = true)
+                    } catch (_: MlConfigParseException) {
+                        Toast.makeText(this@MainActivity, "Wrong password.", Toast.LENGTH_SHORT).show()
+                    } catch (_: Throwable) {
+                        Toast.makeText(this@MainActivity, "Wrong password.", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
             .setNegativeButton("Cancel", null)
@@ -648,6 +675,7 @@ class MainActivity : AppCompatActivity() {
     /** Edit flow (ConfigFragment "Edit", بلا كلمة سر فقط): يعمر الحقول ويرجع لتبويب SSH SETTINGS بلا اتصال تلقائي. */
     fun loadFieldsForEditing(fields: Map<String, Any?>) {
         clearActiveImportedConfigSilently()
+        clearServerMessage()
         applyFieldsToManualPrefs(fields)
         restoreManualFields()
         updateImportUiState()
@@ -814,6 +842,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * السيرفر مساج تبع الكونفيغ .ml المحمّل ديك الساعة - خاصها تتمسح ملي
+     * المستخدم كيرجع لوضع يدوي (Remove Imported Config / Edit / اختيار
+     * بروتوكول من Choose Protocol) باش ما تبقاش رسالة قديمة معلقة بلا
+     * علاقة بالكونفيغ الحالي.
+     */
+    private fun clearServerMessage() {
+        pendingServerMessage = ""
+        manualFieldsPrefs().edit().remove("serverMessage").apply()
+        updateServerMessageBanner()
+    }
+
     private fun manualFieldsPrefs() = getSharedPreferences("manual_fields", Context.MODE_PRIVATE)
 
     private fun restoreManualFields() {
@@ -956,6 +996,7 @@ class MainActivity : AppCompatActivity() {
             XraySecureConfigStore.clear(applicationContext)
             activeXrayConfig = null
         }
+        clearServerMessage()
         val f = sshFragment
         if (f != null) {
             f.chkUsePayload.isChecked = opt.usePayload
@@ -1103,6 +1144,7 @@ class MainActivity : AppCompatActivity() {
                 activeImportedConfig = null
                 XraySecureConfigStore.clear(applicationContext)
                 activeXrayConfig = null
+                clearServerMessage()
                 updateImportUiState()
                 Toast.makeText(this, "Imported config removed", Toast.LENGTH_SHORT).show()
             }
