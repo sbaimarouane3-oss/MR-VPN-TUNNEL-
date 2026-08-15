@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="logs" path="." />
+    <!-- فقط للأجهزة القديمة (API &lt; 29) لي كتكتب مباشرة فـ Downloads بلا
+         MediaStore - كنستعملو FileProvider باش الملف يبقى قابل للمشاركة
+         (ACTION_SEND) بلا FileUriExposedException. -->
+    <external-path name="downloads_mrvpn" path="Download/MR VPN TUNNEL/" />
 </paths>
