@@ -36,15 +36,14 @@
                  جاي من تلغرام/واتساب/مدير ملفات - سواء وصل كـcontent:// (أغلب
                  الحالات) أو file://. التوافق كيختلف بحسب التطبيق المرسل حيت
                  .ml ماشي امتداد مسجل رسميا فـ Android MimeTypeMap. -->
-            <intent-filter>
+            <intent-filter android:priority="1000">
                 <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="content" />
                 <data android:scheme="file" />
-                <data android:host="*" />
+                <data android:scheme="content" />
                 <data android:mimeType="*/*" />
-                <data android:pathPattern=".*\\.ml" />
             </intent-filter>
         </activity>
 
