@@ -136,12 +136,12 @@ object ConfigStorageManager {
     private fun listViaMediaStore(context: Context): List<ConfigFileEntry> {
         val result = mutableListOf<ConfigFileEntry>()
         val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
-        val projection = arrayOf(MediaStore._ID, MediaStore.Downloads.DISPLAY_NAME, MediaStore.Downloads.RELATIVE_PATH)
+        val projection = arrayOf(MediaStore.MediaColumns._ID, MediaStore.Downloads.DISPLAY_NAME, MediaStore.Downloads.RELATIVE_PATH)
         val selection = "${MediaStore.Downloads.RELATIVE_PATH} = ? AND ${MediaStore.Downloads.DISPLAY_NAME} LIKE ?"
         val args = arrayOf("${Environment.DIRECTORY_DOWNLOADS}/$SUBFOLDER/", "%.${MlConfigFile.EXTENSION}")
         try {
             context.contentResolver.query(collection, projection, selection, args, "${MediaStore.Downloads.DATE_ADDED} DESC")?.use { c ->
-                val idCol = c.getColumnIndexOrThrow(MediaStore._ID)
+                val idCol = c.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
                 val nameCol = c.getColumnIndexOrThrow(MediaStore.Downloads.DISPLAY_NAME)
                 while (c.moveToNext()) {
                     val id = c.getLong(idCol)
@@ -181,4 +181,3 @@ object ConfigStorageManager {
         return if (candidate.exists()) candidate else null
     }
 }
-
