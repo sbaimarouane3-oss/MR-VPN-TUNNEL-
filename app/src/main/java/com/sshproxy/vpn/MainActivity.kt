@@ -527,9 +527,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleIntentUriIfPresent(intent: Intent?) {
-        if (intent?.action == Intent.ACTION_VIEW && intent.data != null) {
-            pendingIncomingUri = intent.data
+        if (intent == null) return
+        val uri = when (intent.action) {
+            Intent.ACTION_VIEW -> intent.data
+            Intent.ACTION_SEND -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM)
+                }
+            }
+            else -> null
         }
+        if (uri != null) pendingIncomingUri = uri
     }
 
     /** Called once sshFragment (and its fields) actually exist - see onSshFragmentReady. */
@@ -557,7 +568,7 @@ class MainActivity : AppCompatActivity() {
                 promptPasswordForIncomingFile(bytes)
             } else {
                 val parsed = MlConfigFile.parse(bytes, null)
-                applyFieldsAndConnect(parsed.fields, parsed.serverMessage)
+                applyFieldsAndConnect(parsed.fields, parsed.serverMessage, isProtected = false)
             }
         } catch (_: Throwable) {
             Toast.makeText(this, "Invalid or corrupted MR VPN TUNNEL config file.", Toast.LENGTH_SHORT).show()
@@ -576,7 +587,7 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("Open") { _, _ ->
                 try {
                     val parsed = MlConfigFile.parse(bytes, input.text.toString())
-                    applyFieldsAndConnect(parsed.fields, parsed.serverMessage)
+                    applyFieldsAndConnect(parsed.fields, parsed.serverMessage, isProtected = true)
                 } catch (_: MlConfigParseException) {
                     Toast.makeText(this, "Wrong password.", Toast.LENGTH_SHORT).show()
                 } catch (_: Throwable) {
@@ -634,24 +645,41 @@ class MainActivity : AppCompatActivity() {
         editor.apply()
     }
 
-    /** Edit flow (ConfigFragment "Edit"): يعمر الحقول ويرجع لتبويب SSH SETTINGS بلا اتصال تلقائي. */
+    /** Edit flow (ConfigFragment "Edit", بلا كلمة سر فقط): يعمر الحقول ويرجع لتبويب SSH SETTINGS بلا اتصال تلقائي. */
     fun loadFieldsForEditing(fields: Map<String, Any?>) {
+        clearActiveImportedConfigSilently()
         applyFieldsToManualPrefs(fields)
         restoreManualFields()
+        updateImportUiState()
         findViewById<ViewPager2>(R.id.viewPager).currentItem = 0
     }
 
     /**
-     * كونفيغ .ml (من CONFIG tab أو من ملف خارجي): يعمر الحقول، يبين
-     * سيرفر مساج إلا كان موجود، يرجع لتبويب SSH SETTINGS، ويطلق الاتصال
-     * تلقائيا - بلا ما يمس tryConnect/startVpnService/بروتوكول الاتصال
-     * نفسو، غير كيستدعيهم بحال ما يدير المستخدم بيدو.
+     * كونفيغ .ml: يعمر الحقول، يبين سيرفر مساج إلا كان موجود، يرجع
+     * لتبويب SSH SETTINGS، ويطلق الاتصال تلقائيا - بلا ما يمس
+     * tryConnect/startVpnService/بروتوكول الاتصال نفسو، غير كيستدعيهم
+     * بحال ما يدير المستخدم بيدو.
+     *
+     * protected = true (ملف بكلمة سر): معلومات السيرفر ماكتبانش أبدا
+     * فحقول SSH SETTINGS - كنبنيو نفس نوع الكونفيغ "المستورد" (Imported
+     * Config / Xray Config) لي كيستعملها مسار استيراد الكود بالضبط، وهو
+     * كيبين غير ملخص ماسك (Server: xx****) بلا الحقول الخام، بحال ما
+     * كيدير ديجا مع أي كود مستورد.
      */
-    fun applyFieldsAndConnect(fields: Map<String, Any?>, serverMessage: String) {
-        applyFieldsToManualPrefs(fields)
+    fun applyFieldsAndConnect(fields: Map<String, Any?>, serverMessage: String, isProtected: Boolean) {
+        val ok = if (isProtected) {
+            applyFieldsAsHiddenImportedConfig(fields)
+        } else {
+            clearActiveImportedConfigSilently()
+            applyFieldsToManualPrefs(fields)
+            restoreManualFields()
+            updateImportUiState()
+            true
+        }
+        if (!ok) return
+
         pendingServerMessage = serverMessage.trim()
         manualFieldsPrefs().edit().putString("serverMessage", pendingServerMessage).apply()
-        restoreManualFields()
         updateServerMessageBanner()
 
         val viewPager = findViewById<ViewPager2>(R.id.viewPager)
@@ -661,6 +689,117 @@ class MainActivity : AppCompatActivity() {
                 if (!connected && !connecting) tryConnect()
             } catch (e: Throwable) {
                 appendLog("ERROR: ${e.javaClass.simpleName}: ${e.message ?: "Unknown error"}")
+            }
+        }
+    }
+
+    /** بلا Toast/ديالوغ "Replace؟" ديال saveImportedConfig/saveXrayConfig - كنمسحو بصمت قبل ما نرجعو لحقول يدوية. */
+    private fun clearActiveImportedConfigSilently() {
+        if (activeImportedConfig != null || activeXrayConfig != null) {
+            SecureConfigStore.clear(applicationContext)
+            XraySecureConfigStore.clear(applicationContext)
+            activeImportedConfig = null
+            activeXrayConfig = null
+        }
+    }
+
+    /**
+     * كيبني كونفيغ مخفي (ImportedConfig للبروتوكولات ديال SSH، أو
+     * ParsedProxyConfig لـXTRA/V2Ray/Shadowsocks) من fields ديال ملف .ml
+     * محمي، ويحفظو بنفس الطريقة ديال استيراد كود عادي - الحقول الخام
+     * (host/user/pass/...) ماكيتكتبوش لا فـmanual_fields ولا فـEditText.
+     * كيرجع false إلا كان الكونفيغ ناقص/غالط.
+     */
+    private fun applyFieldsAsHiddenImportedConfig(fields: Map<String, Any?>): Boolean {
+        val protocol = (fields["protocol"] as? String) ?: DEFAULT_PROTOCOL.label
+        return when (protocol) {
+            "V2Ray" -> {
+                val json = (fields["v2rayJson"] as? String)?.trim().orEmpty()
+                try {
+                    val cfg = XrayConfigParser.parse(json)
+                    saveXrayConfig(cfg)
+                    true
+                } catch (e: Throwable) {
+                    Toast.makeText(this, "Invalid V2Ray/Xray JSON in this config.", Toast.LENGTH_SHORT).show()
+                    false
+                }
+            }
+            "XTRA" -> {
+                val hostPort = (fields["host"] as? String)?.trim().orEmpty()
+                if (!hostPort.contains(":")) {
+                    Toast.makeText(this, "Invalid config: missing host:port.", Toast.LENGTH_SHORT).show()
+                    return false
+                }
+                val host = hostPort.substringBeforeLast(":")
+                val port = hostPort.substringAfterLast(":").toIntOrNull() ?: 443
+                val id = (fields["user"] as? String)?.trim().orEmpty()
+                val sni = (fields["sni"] as? String)?.trim().orEmpty()
+                val cfg = ParsedProxyConfig(
+                    protocol = ParsedProxyConfig.ProxyProtocol.VLESS,
+                    remark = "XTRA",
+                    address = host,
+                    port = port,
+                    id = id,
+                    encryption = "none",
+                    network = "tcp",
+                    security = if (sni.isNotBlank()) "tls" else "none",
+                    sni = sni
+                )
+                saveXrayConfig(cfg)
+                true
+            }
+            "Shadowsocks" -> {
+                val server = (fields["ssServer"] as? String)?.trim().orEmpty()
+                val port = fields["ssPort"]?.toString()?.trim()?.toIntOrNull() ?: 0
+                val method = (fields["ssMethod"] as? String)?.trim().orEmpty()
+                val password = (fields["ssPassword"] as? String).orEmpty()
+                val udp = (fields["ssUdp"] as? Boolean) ?: true
+                if (server.isEmpty() || port <= 0 || method.isEmpty() || password.isEmpty()) {
+                    Toast.makeText(this, "Invalid config: missing Shadowsocks fields.", Toast.LENGTH_SHORT).show()
+                    return false
+                }
+                val cfg = ParsedProxyConfig(
+                    protocol = ParsedProxyConfig.ProxyProtocol.SHADOWSOCKS,
+                    remark = "Shadowsocks",
+                    address = server,
+                    port = port,
+                    ssMethod = method,
+                    ssPassword = password,
+                    ssUdp = udp,
+                    network = "tcp",
+                    security = "none"
+                )
+                saveXrayConfig(cfg)
+                true
+            }
+            else -> {
+                // SSH-style (SSH-Direct / SSH-TLS / SSH-Payload / ...)
+                val hostPort = (fields["host"] as? String)?.trim().orEmpty()
+                if (!hostPort.contains(":")) {
+                    Toast.makeText(this, "Invalid config: missing host:port.", Toast.LENGTH_SHORT).show()
+                    return false
+                }
+                val host = hostPort.substringBeforeLast(":")
+                val port = hostPort.substringAfterLast(":").toIntOrNull() ?: 443
+                val proxyText = (fields["proxy"] as? String)?.trim().orEmpty()
+                val proxyHost = if (proxyText.contains(":")) proxyText.substringBeforeLast(":") else host
+                val proxyPort = if (proxyText.contains(":")) proxyText.substringAfterLast(":").toIntOrNull() ?: port else port
+                val cfg = ImportedConfig(
+                    host = host,
+                    port = port,
+                    user = (fields["user"] as? String).orEmpty(),
+                    pass = (fields["pass"] as? String).orEmpty(),
+                    proxyHost = proxyHost,
+                    proxyPort = proxyPort,
+                    payload = (fields["payload"] as? String).orEmpty(),
+                    usePayload = (fields["usePayload"] as? Boolean) ?: true,
+                    useSsl = (fields["useSsl"] as? Boolean) ?: false,
+                    sni = (fields["sni"] as? String).orEmpty(),
+                    udpgwEnabled = (fields["udpgwEnabled"] as? Boolean) ?: false,
+                    udpgwPort = fields["udpgwPort"]?.toString()?.toIntOrNull() ?: 7300
+                )
+                saveImportedConfig(cfg)
+                true
             }
         }
     }
