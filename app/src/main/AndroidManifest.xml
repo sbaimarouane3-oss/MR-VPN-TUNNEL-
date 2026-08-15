@@ -26,47 +26,24 @@
             android:exported="true"
             android:label="MR VPN TUNNEL"
             android:launchMode="singleTask"
-            android:taskAffinity=""
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- ===== استقبال ملف .ml عبر "Open with" (مدير ملفات، أو
-                 رابط file://) - ACTION_VIEW فقط، بلا BROWSABLE (هاديك
-                 مخصصة للروابط http/https ديال المتصفح، ماشي للملفات،
-                 وكانت هي اللي كتخلي التطبيق يبان فأماكن ماعندوش علاقة
-                 بيهم + كتزيد فمشكل الأيقونة العالقة). كنقبلو غير
-                 mimeType اللي عادة كيتعطى للملفات بامتداد غير معروف
-                 (application/octet-stream) - ماشي "*/*" لكل الملفات. ===== -->
-            <intent-filter android:priority="500">
+            <!-- كيسمح للتطبيق يبان كخيار "Open with" عند الضغط على ملف .ml
+                 جاي من تلغرام/واتساب/مدير ملفات - سواء وصل كـcontent:// (أغلب
+                 الحالات) أو file://. التوافق كيختلف بحسب التطبيق المرسل حيت
+                 .ml ماشي امتداد مسجل رسميا فـ Android MimeTypeMap. -->
+            <intent-filter android:priority="1000">
                 <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:scheme="file" android:mimeType="application/octet-stream" />
-                <data android:scheme="content" android:mimeType="application/octet-stream" />
-            </intent-filter>
-
-            <!-- نفس الفكرة، لكن ب pathPattern على الامتداد .ml - كتخدم
-                 فالغالب غير مع file:// (روابط content:// كتخبي المسار
-                 الحقيقي عادة، فماكيمكنش نعتمدو عليها بوحدها). -->
-            <intent-filter android:priority="500">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data
-                    android:scheme="file"
-                    android:host="*"
-                    android:pathPattern=".*\\.ml" />
-            </intent-filter>
-
-            <!-- ===== استقبال ملف .ml عبر "Share" (تلغرام/واتساب) -
-                 ACTION_SEND وحدو، بلا BROWSABLE، وبنفس mimeType المقيد
-                 باش التطبيق ما يبانش كخيار مشاركة لكل صورة/فيديو/ملف
-                 كيشاركو المستخدمين. ===== -->
-            <intent-filter android:priority="500">
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="application/octet-stream" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="file" />
+                <data android:scheme="content" />
+                <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
 
