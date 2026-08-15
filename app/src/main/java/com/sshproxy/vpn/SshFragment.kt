@@ -49,6 +49,8 @@ class SshFragment : Fragment(R.layout.fragment_ssh) {
     lateinit var btnRemoveImported: Button
     lateinit var importedStatusContainer: LinearLayout
     lateinit var txtImportedStatus: TextView
+    lateinit var serverMessageContainer: LinearLayout
+    lateinit var txtServerMessage: TextView
 
     // Views ديال التصميم الجديد فقط (عرض/status) — بلا أي منطق اتصال،
     // كيتحدثو فـ MainActivity جنب نفس الأسطر لي كانت كتبدل نص btnConnect
@@ -92,6 +94,8 @@ class SshFragment : Fragment(R.layout.fragment_ssh) {
         btnRemoveImported = view.findViewById(R.id.btnRemoveImported)
         importedStatusContainer = view.findViewById(R.id.importedStatusContainer)
         txtImportedStatus = view.findViewById(R.id.txtImportedStatus)
+        serverMessageContainer = view.findViewById(R.id.serverMessageContainer)
+        txtServerMessage = view.findViewById(R.id.txtServerMessage)
 
         viewConnectPulseRing = view.findViewById(R.id.viewConnectPulseRing)
         txtServerValue = view.findViewById(R.id.txtServerValue)
