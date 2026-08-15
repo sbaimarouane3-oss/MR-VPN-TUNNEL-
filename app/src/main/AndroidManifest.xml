@@ -8,6 +8,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"
         tools:targetApi="34" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- غير للأجهزة القديمة (API 28 وتحت) - كتخدم كونفيغ .ml مباشرة فـ
+         Downloads بلا MediaStore. Android 10+ ماخاصهاش هاد الصلاحية. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
 
     <application
         android:allowBackup="true"
@@ -21,10 +25,26 @@
             android:name=".MainActivity"
             android:exported="true"
             android:label="MR VPN TUNNEL"
+            android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- كيسمح للتطبيق يبان كخيار "Open with" عند الضغط على ملف .ml
+                 جاي من تلغرام/واتساب/مدير ملفات - سواء وصل كـcontent:// (أغلب
+                 الحالات) أو file://. التوافق كيختلف بحسب التطبيق المرسل حيت
+                 .ml ماشي امتداد مسجل رسميا فـ Android MimeTypeMap. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:mimeType="*/*" />
+                <data android:pathPattern=".*\\.ml" />
             </intent-filter>
         </activity>
 
