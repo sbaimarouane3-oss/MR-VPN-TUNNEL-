@@ -16,6 +16,8 @@
     <!-- ألوان الحالة -->
     <color name="accent_green">#1DB954</color>
     <color name="accent_green_dark">#12833B</color>
+    <color name="accent_blue">#2F80ED</color>
+    <color name="accent_blue_dark">#1C5FC0</color>
     <color name="state_success">#1DB954</color>
     <color name="state_error">#FF5459</color>
     <color name="state_connecting">#FFA726</color>
