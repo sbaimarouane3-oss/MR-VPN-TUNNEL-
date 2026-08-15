@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.content.res.ColorStateList
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.Uri
 import android.net.VpnService
 import android.os.Build
 import android.telephony.TelephonyManager
@@ -39,6 +40,8 @@ import com.google.android.material.tabs.TabLayoutMediator
 import com.sshproxy.vpn.importer.ImportCrypto
 import com.sshproxy.vpn.importer.ImportedConfig
 import com.sshproxy.vpn.importer.InvalidImportCodeException
+import com.sshproxy.vpn.importer.MlConfigFile
+import com.sshproxy.vpn.importer.MlConfigParseException
 import com.sshproxy.vpn.importer.SecureConfigStore
 import com.sshproxy.vpn.importer.XraySecureConfigStore
 import com.sshproxy.vpn.xray.ParsedProxyConfig
@@ -113,6 +116,14 @@ class MainActivity : AppCompatActivity() {
 
     private var sshFragment: SshFragment? = null
     private var logFragment: LogFragment? = null
+    private var configFragment: ConfigFragment? = null
+
+    // رسالة السيرفر (اختيارية) ديال آخر كونفيغ .ml تحمّل - كتبان فبانر
+    // أسفل SSH SETTINGS. كتتحفظ فـ manual_fields prefs باش تبقى بعد ريستارت.
+    private var pendingServerMessage: String = ""
+    // .ml ملف جاي من نية VIEW خارجية (تلغرام/واتساب...) وصل قبل ما
+    // SshFragment يكون جاهز - كنأخروه لحد onSshFragmentReady.
+    private var pendingIncomingUri: Uri? = null
 
     private var drawerLayout: DrawerLayout? = null
 
@@ -183,6 +194,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        handleIntentUriIfPresent(intent)
 
         val root = findViewById<View>(android.R.id.content)
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
@@ -251,7 +263,11 @@ class MainActivity : AppCompatActivity() {
         viewPager.offscreenPageLimit = 1
         viewPager.adapter = MainPagerAdapter(this)
         TabLayoutMediator(tabLayout, viewPager) { tab, position ->
-            tab.text = if (position == 0) "SSH SETTINGS" else "LOG"
+            tab.text = when (position) {
+                0 -> "SSH SETTINGS"
+                1 -> "CONFIG"
+                else -> "LOG"
+            }
         }.attach()
 
         startLogPolling()
@@ -454,6 +470,7 @@ class MainActivity : AppCompatActivity() {
         wireManualFieldPersistence()
         updateImportUiState()
         syncStateFromService()
+        processPendingFileIntentIfAny()
     }
 
     /**
@@ -498,6 +515,166 @@ class MainActivity : AppCompatActivity() {
         fragment.logScroll.post { fragment.logScroll.fullScroll(View.FOCUS_DOWN) }
     }
 
+    fun onConfigFragmentReady(fragment: ConfigFragment) {
+        configFragment = fragment
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntentUriIfPresent(intent)
+        processPendingFileIntentIfAny()
+    }
+
+    private fun handleIntentUriIfPresent(intent: Intent?) {
+        if (intent?.action == Intent.ACTION_VIEW && intent.data != null) {
+            pendingIncomingUri = intent.data
+        }
+    }
+
+    /** Called once sshFragment (and its fields) actually exist - see onSshFragmentReady. */
+    private fun processPendingFileIntentIfAny() {
+        val uri = pendingIncomingUri ?: return
+        if (sshFragment == null) return
+        pendingIncomingUri = null
+        handleIncomingConfigFile(uri)
+    }
+
+    /**
+     * كيقرا ملف .ml جاي من نية VIEW خارجية (تلغرام/واتساب/أي مدير ملفات) -
+     * إلا محمي بكلمة سر كنطلبوها، وإلا لا كنعمرو الحقول ونتصلو مباشرة.
+     * بلا ما نمسو أي حاجة فمنطق الاتصال نفسو (applyFieldsAndConnect
+     * كتعتمد على نفس tryConnect/startVpnService الموجودين ديجا).
+     */
+    private fun handleIncomingConfigFile(uri: Uri) {
+        val bytes = ConfigStorageManager.readBytes(applicationContext, uri)
+        if (bytes == null) {
+            Toast.makeText(this, "Could not read config file.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            if (MlConfigFile.isEncrypted(bytes)) {
+                promptPasswordForIncomingFile(bytes)
+            } else {
+                val parsed = MlConfigFile.parse(bytes, null)
+                applyFieldsAndConnect(parsed.fields, parsed.serverMessage)
+            }
+        } catch (_: Throwable) {
+            Toast.makeText(this, "Invalid or corrupted MR VPN TUNNEL config file.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun promptPasswordForIncomingFile(bytes: ByteArray) {
+        val input = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            hint = "Password"
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Protected Config")
+            .setMessage("This config is password protected. Enter the password to open and connect.")
+            .setView(input)
+            .setPositiveButton("Open") { _, _ ->
+                try {
+                    val parsed = MlConfigFile.parse(bytes, input.text.toString())
+                    applyFieldsAndConnect(parsed.fields, parsed.serverMessage)
+                } catch (_: MlConfigParseException) {
+                    Toast.makeText(this, "Wrong password.", Toast.LENGTH_SHORT).show()
+                } catch (_: Throwable) {
+                    Toast.makeText(this, "Wrong password.", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** Snapshot of whatever protocol/fields are currently set in SSH SETTINGS - used to build a new .ml config. */
+    fun currentManualFieldsSnapshot(): Map<String, Any?> {
+        val p = manualFieldsPrefs()
+        return linkedMapOf(
+            "protocol" to (p.getString("protocol", DEFAULT_PROTOCOL.label) ?: DEFAULT_PROTOCOL.label),
+            "host" to (p.getString("host", "") ?: ""),
+            "user" to (p.getString("user", "") ?: ""),
+            "pass" to (p.getString("pass", "") ?: ""),
+            "proxy" to (p.getString("proxy", "") ?: ""),
+            "payload" to (p.getString("payload", "") ?: ""),
+            "usePayload" to p.getBoolean("usePayload", DEFAULT_PROTOCOL.usePayload),
+            "sni" to (p.getString("sni", "") ?: ""),
+            "useSsl" to p.getBoolean("useSsl", DEFAULT_PROTOCOL.useSsl),
+            "udpgwEnabled" to p.getBoolean("udpgwEnabled", false),
+            "udpgwPort" to (p.getString("udpgwPort", "7300") ?: "7300"),
+            "v2rayJson" to (p.getString("v2rayJson", "") ?: ""),
+            "ssServer" to (p.getString("ssServer", "") ?: ""),
+            "ssPort" to (p.getString("ssPort", "") ?: ""),
+            "ssMethod" to (p.getString("ssMethod", "") ?: ""),
+            "ssPassword" to (p.getString("ssPassword", "") ?: ""),
+            "ssUdp" to p.getBoolean("ssUdp", true)
+        )
+    }
+
+    /** كيكتب فـ manual_fields prefs غير المفاتيح الموجودة فـ fields - بلا ما يمس أي حاجة أخرى. */
+    private fun applyFieldsToManualPrefs(fields: Map<String, Any?>) {
+        val editor = manualFieldsPrefs().edit()
+        (fields["protocol"] as? String)?.let { editor.putString("protocol", it) }
+        (fields["host"] as? String)?.let { editor.putString("host", it) }
+        (fields["user"] as? String)?.let { editor.putString("user", it) }
+        (fields["pass"] as? String)?.let { editor.putString("pass", it) }
+        (fields["proxy"] as? String)?.let { editor.putString("proxy", it) }
+        (fields["payload"] as? String)?.let { editor.putString("payload", it) }
+        (fields["usePayload"] as? Boolean)?.let { editor.putBoolean("usePayload", it) }
+        (fields["sni"] as? String)?.let { editor.putString("sni", it) }
+        (fields["useSsl"] as? Boolean)?.let { editor.putBoolean("useSsl", it) }
+        (fields["udpgwEnabled"] as? Boolean)?.let { editor.putBoolean("udpgwEnabled", it) }
+        fields["udpgwPort"]?.toString()?.let { editor.putString("udpgwPort", it) }
+        (fields["v2rayJson"] as? String)?.let { editor.putString("v2rayJson", it) }
+        (fields["ssServer"] as? String)?.let { editor.putString("ssServer", it) }
+        fields["ssPort"]?.toString()?.let { editor.putString("ssPort", it) }
+        (fields["ssMethod"] as? String)?.let { editor.putString("ssMethod", it) }
+        (fields["ssPassword"] as? String)?.let { editor.putString("ssPassword", it) }
+        (fields["ssUdp"] as? Boolean)?.let { editor.putBoolean("ssUdp", it) }
+        editor.apply()
+    }
+
+    /** Edit flow (ConfigFragment "Edit"): يعمر الحقول ويرجع لتبويب SSH SETTINGS بلا اتصال تلقائي. */
+    fun loadFieldsForEditing(fields: Map<String, Any?>) {
+        applyFieldsToManualPrefs(fields)
+        restoreManualFields()
+        findViewById<ViewPager2>(R.id.viewPager).currentItem = 0
+    }
+
+    /**
+     * كونفيغ .ml (من CONFIG tab أو من ملف خارجي): يعمر الحقول، يبين
+     * سيرفر مساج إلا كان موجود، يرجع لتبويب SSH SETTINGS، ويطلق الاتصال
+     * تلقائيا - بلا ما يمس tryConnect/startVpnService/بروتوكول الاتصال
+     * نفسو، غير كيستدعيهم بحال ما يدير المستخدم بيدو.
+     */
+    fun applyFieldsAndConnect(fields: Map<String, Any?>, serverMessage: String) {
+        applyFieldsToManualPrefs(fields)
+        pendingServerMessage = serverMessage.trim()
+        manualFieldsPrefs().edit().putString("serverMessage", pendingServerMessage).apply()
+        restoreManualFields()
+        updateServerMessageBanner()
+
+        val viewPager = findViewById<ViewPager2>(R.id.viewPager)
+        viewPager.currentItem = 0
+        viewPager.post {
+            try {
+                if (!connected && !connecting) tryConnect()
+            } catch (e: Throwable) {
+                appendLog("ERROR: ${e.javaClass.simpleName}: ${e.message ?: "Unknown error"}")
+            }
+        }
+    }
+
+    private fun updateServerMessageBanner() {
+        val f = sshFragment ?: return
+        if (pendingServerMessage.isNotEmpty()) {
+            f.serverMessageContainer.visibility = View.VISIBLE
+            f.txtServerMessage.text = pendingServerMessage
+        } else {
+            f.serverMessageContainer.visibility = View.GONE
+        }
+    }
+
     private fun manualFieldsPrefs() = getSharedPreferences("manual_fields", Context.MODE_PRIVATE)
 
     private fun restoreManualFields() {
@@ -522,6 +699,8 @@ class MainActivity : AppCompatActivity() {
         f.edtSsPassword.setText(p.getString("ssPassword", ""))
         f.chkSsUdp.isChecked = p.getBoolean("ssUdp", true)
         applyProtocolFieldVisibility(f, opt)
+        pendingServerMessage = p.getString("serverMessage", "") ?: ""
+        updateServerMessageBanner()
     }
 
     /**
