@@ -90,7 +90,7 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
             if (entry.isEncrypted) {
                 promptPasswordAndOpen(bytes)
             } else {
-                applyParsedConfig(bytes, null)
+                applyParsedConfig(bytes, null, isProtected = false)
             }
         }
     }
@@ -105,16 +105,16 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
             .setTitle("Protected Config")
             .setMessage("This config is password protected. Enter the password to open it.")
             .setView(wrapDialogInput(input))
-            .setPositiveButton("Open") { _, _ -> applyParsedConfig(bytes, input.text.toString()) }
+            .setPositiveButton("Open") { _, _ -> applyParsedConfig(bytes, input.text.toString(), isProtected = true) }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
-    private fun applyParsedConfig(bytes: ByteArray, password: String?) {
+    private fun applyParsedConfig(bytes: ByteArray, password: String?, isProtected: Boolean) {
         val ctx = context ?: return
         try {
             val parsed = MlConfigFile.parse(bytes, password)
-            (requireActivity() as? MainActivity)?.applyFieldsAndConnect(parsed.fields, parsed.serverMessage)
+            (requireActivity() as? MainActivity)?.applyFieldsAndConnect(parsed.fields, parsed.serverMessage, isProtected)
         } catch (e: MlConfigParseException) {
             val msg = if (e.message == "wrong password") "Wrong password." else "Invalid or corrupted config file."
             Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
