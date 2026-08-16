@@ -118,9 +118,15 @@ class MainActivity : AppCompatActivity() {
     private var logFragment: LogFragment? = null
     private var configFragment: ConfigFragment? = null
 
-    // رسالة السيرفر (اختيارية) ديال آخر كونفيغ .ml تحمّل - كتبان فبانر
-    // أسفل SSH SETTINGS. كتتحفظ فـ manual_fields prefs باش تبقى بعد ريستارت.
-    private var pendingServerMessage: String = ""
+    // اسم الملف .ml اللي هو "النشط" حاليا (متصل ولا فطور الاتصال) عبر
+    // زر ★/■ فـCONFIG tab أو عبر ملف جاي من تلغرام/واتساب - null معناه
+    // مافيهش ملف نشط (اتصال يدوي عادي من SSH SETTINGS). كنستعملوه باش
+    // ConfigFragment يعرف أي صف يلون بالأخضر ويبين ■ بدل ★.
+    private var activeConfigFileName: String? = null
+    // ملي المستخدم كيدوس "Edit" على ملف .ml بلا كلمة سر: كنسجلو اسمو
+    // هنا باش لما يعاود يحفظ بنفس الاسم من "+ NEW CONFIG" نديرو Overwrite
+    // بلا خطأ "الاسم مستعمل ديجا" (التكرار ممنوع غير للأسماء المختلفة).
+    private var editingConfigOriginalName: String? = null
     // .ml ملف جاي من نية VIEW خارجية (تلغرام/واتساب...) وصل قبل ما
     // SshFragment يكون جاهز - كنأخروه لحد onSshFragmentReady.
     private var pendingIncomingUri: Uri? = null
@@ -207,9 +213,17 @@ class MainActivity : AppCompatActivity() {
         // Recents. onCreate غادي يتعاود من جديد تلقائيا مع الـ instance
         // الجديدة، فـhandleIntentUriIfPresent(intent) تحت غادي تخدم بحالها
         // ديما.
-        if ((intent?.action == Intent.ACTION_VIEW || intent?.action == Intent.ACTION_SEND) && !isTaskRoot) {
+        //
+        // حارس ضد loop لا نهائي: إلا كان هاد الـ intent نفسو سبق وتعاود
+        // إطلاقو من هنا (EXTRA_RELAUNCHED=true) وبقات isTaskRoot=false
+        // حتى بعد المحاولة، نوقفو ونكملو عادي بدل ما نلفو للأبد - بعض
+        // الأجهزة/اللانشرات النادرة يمكن ما تعطيش isTaskRoot=true حتى
+        // بعد finish()+startActivity().
+        val isReentryFileIntent = (intent?.action == Intent.ACTION_VIEW || intent?.action == Intent.ACTION_SEND)
+        if (isReentryFileIntent && !isTaskRoot && intent?.getBooleanExtra(EXTRA_RELAUNCHED, false) != true) {
+            val relaunch = Intent(intent).putExtra(EXTRA_RELAUNCHED, true)
             finish()
-            startActivity(intent)
+            startActivity(relaunch)
             return
         }
 
@@ -484,6 +498,7 @@ class MainActivity : AppCompatActivity() {
         fragment.btnImportConfig.setOnClickListener { showImportDialog() }
         fragment.btnRemoveImported.setOnClickListener { confirmRemoveImportedConfig() }
         fragment.rowProtocol.setOnClickListener { showProtocolPicker() }
+        fragment.btnNewConfig.setOnClickListener { showNewConfigNameDialog() }
 
         restoreManualFields()
         wireManualFieldPersistence()
@@ -590,9 +605,10 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * كيقرا ملف .ml جاي من نية VIEW خارجية (تلغرام/واتساب/أي مدير ملفات) -
-     * إلا محمي بكلمة سر كنطلبوها، وإلا لا كنعمرو الحقول ونتصلو مباشرة.
-     * بلا ما نمسو أي حاجة فمنطق الاتصال نفسو (applyFieldsAndConnect
-     * كتعتمد على نفس tryConnect/startVpnService الموجودين ديجا).
+     * كيحفظ نسخة منو فـCONFIG tab (بلا ما يبدل شي ملف بنفس الاسم - كيزيد
+     * "(1)" إلا تكرر)، يبدل لتبويب CONFIG (ماشي SSH SETTINGS)، ويتصل من
+     * تما - إلا محمي بكلمة سر كنطلبوها (مرة وحدة فهاد الجلسة، شوف
+     * UnlockedConfigCache). بلا ما نمسو أي حاجة فمنطق الاتصال نفسو.
      */
     private fun handleIncomingConfigFile(uri: Uri) {
         lifecycleScope.launch {
@@ -605,12 +621,37 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this@MainActivity, "Could not read config file.", Toast.LENGTH_SHORT).show()
                 return@launch
             }
+            if (!looksLikeMlConfig(bytes)) {
+                Toast.makeText(this@MainActivity, "Invalid or corrupted MR VPN TUNNEL config file.", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val suggestedName = withContext(Dispatchers.IO) {
+                ConfigStorageManager.queryDisplayName(applicationContext, uri)
+            } ?: "config_${System.currentTimeMillis()}"
+            val saved = withContext(Dispatchers.IO) {
+                ConfigStorageManager.saveDeduped(applicationContext, suggestedName, bytes)
+            }
+            if (saved == null) {
+                Toast.makeText(this@MainActivity, "Could not save config.", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val (_, savedName) = saved
+
+            // ماشي SSH SETTINGS - CONFIG tab هو لي خاصو يبين الملف الجديد.
+            findViewById<ViewPager2>(R.id.viewPager).currentItem = 1
+            configFragment?.refreshList()
+
             try {
                 if (MlConfigFile.isEncrypted(bytes)) {
-                    promptPasswordForIncomingFile(bytes)
+                    val cached = UnlockedConfigCache.get(savedName)
+                    if (cached != null) {
+                        connectConfigFile(savedName, cached, isProtected = true)
+                    } else {
+                        promptPasswordForIncomingFile(bytes, savedName)
+                    }
                 } else {
                     val parsed = MlConfigFile.parse(bytes, null)
-                    applyFieldsAndConnect(parsed.fields, parsed.serverMessage, isProtected = false)
+                    connectConfigFile(savedName, parsed.fields, isProtected = false)
                 }
             } catch (_: Throwable) {
                 Toast.makeText(this@MainActivity, "Invalid or corrupted MR VPN TUNNEL config file.", Toast.LENGTH_SHORT).show()
@@ -618,21 +659,27 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun promptPasswordForIncomingFile(bytes: ByteArray) {
+    /** فحص خفيف بلا فك تشفير - غير باش نأكدو أن الملف MR VPN TUNNEL فعلا قبل ما نحفظوه فـCONFIG tab. */
+    private fun looksLikeMlConfig(bytes: ByteArray): Boolean {
+        return try { MlConfigFile.isEncrypted(bytes); true } catch (_: Throwable) { false }
+    }
+
+    private fun promptPasswordForIncomingFile(bytes: ByteArray, savedName: String) {
         val input = EditText(this).apply {
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
             hint = "Password"
         }
         AlertDialog.Builder(this)
             .setTitle("Protected Config")
-            .setMessage("This config is password protected. Enter the password to open and connect.")
+            .setMessage("This config is password protected. Enter the password to open and connect (you'll only need to enter it once this session).")
             .setView(input)
             .setPositiveButton("Open") { _, _ ->
                 val password = input.text.toString()
                 lifecycleScope.launch {
                     try {
                         val parsed = withContext(Dispatchers.Default) { MlConfigFile.parse(bytes, password) }
-                        applyFieldsAndConnect(parsed.fields, parsed.serverMessage, isProtected = true)
+                        UnlockedConfigCache.put(savedName, parsed.fields)
+                        connectConfigFile(savedName, parsed.fields, isProtected = true)
                     } catch (_: MlConfigParseException) {
                         Toast.makeText(this@MainActivity, "Wrong password.", Toast.LENGTH_SHORT).show()
                     } catch (_: Throwable) {
@@ -668,6 +715,83 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    // ===== إنشاء كونفيغ .ml جديد (زر "+ NEW CONFIG" فـSSH SETTINGS) =====
+    // اسم -> كلمة سر اختيارية -> حفظ. بلا خطوة سيرفر مساج (تحيدات).
+
+    private fun showNewConfigNameDialog() {
+        val nameInput = EditText(this).apply { hint = "Config name (any text/emoji)" }
+        AlertDialog.Builder(this)
+            .setTitle("New Config")
+            .setMessage("Name this config. It will be created from your current SSH SETTINGS.")
+            .setView(nameInput)
+            .setPositiveButton("Next") { _, _ ->
+                val name = nameInput.text.toString().trim()
+                if (name.isEmpty()) {
+                    Toast.makeText(this, "Please enter a name.", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                lifecycleScope.launch {
+                    val fileName = ConfigStorageManager.finalFileName(name)
+                    val existing = withContext(Dispatchers.IO) { ConfigStorageManager.list(applicationContext) }
+                        .firstOrNull { it.displayName.equals(fileName, ignoreCase = true) }
+                    val isEditingThisOne = editingConfigOriginalName != null &&
+                        fileName.equals(editingConfigOriginalName, ignoreCase = true)
+                    if (existing != null && !isEditingThisOne) {
+                        // ممنوع تكرار نفس اسم الملف - كنطلبو اسم آخر بدل
+                        // ما نبدلو الملف بصمت.
+                        Toast.makeText(
+                            this@MainActivity,
+                            "\"$fileName\" already exists. Please choose a different name.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        showNewConfigNameDialog()
+                    } else {
+                        showNewConfigPasswordDialog(name)
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showNewConfigPasswordDialog(name: String) {
+        val passInput = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            hint = "Password (optional - leave empty for no protection)"
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Protect with a Password?")
+            .setMessage("If you set a password, the file will be strongly encrypted (AES-256) and no one can read the server info inside without it. Leave empty to keep the file open, editable, and shareable as-is.")
+            .setView(passInput)
+            .setPositiveButton("Save") { _, _ -> saveNewConfig(name, passInput.text.toString()) }
+            .setNegativeButton("Back") { _, _ -> showNewConfigNameDialog() }
+            .show()
+    }
+
+    private fun saveNewConfig(name: String, password: String) {
+        val fields = currentManualFieldsSnapshot()
+        val bytes = MlConfigFile.build(name, "", fields, password.ifBlank { null })
+        val fileName = ConfigStorageManager.finalFileName(name)
+
+        lifecycleScope.launch {
+            val existing = withContext(Dispatchers.IO) { ConfigStorageManager.list(applicationContext) }
+                .firstOrNull { it.displayName.equals(fileName, ignoreCase = true) }
+            val ok = withContext(Dispatchers.IO) {
+                if (existing != null) ConfigStorageManager.overwrite(applicationContext, existing, bytes)
+                else ConfigStorageManager.save(applicationContext, name, bytes) != null
+            }
+            if (ok) {
+                Toast.makeText(this@MainActivity, "Config saved to Download/MR VPN TUNNEL \u2705", Toast.LENGTH_SHORT).show()
+                editingConfigOriginalName = null
+                UnlockedConfigCache.remove(fileName)
+            } else {
+                Toast.makeText(this@MainActivity, "Could not save config.", Toast.LENGTH_SHORT).show()
+            }
+            configFragment?.refreshList()
+        }
+    }
+
+
     /** كيكتب فـ manual_fields prefs غير المفاتيح الموجودة فـ fields - بلا ما يمس أي حاجة أخرى. */
     private fun applyFieldsToManualPrefs(fields: Map<String, Any?>) {
         val editor = manualFieldsPrefs().edit()
@@ -692,9 +816,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** Edit flow (ConfigFragment "Edit", بلا كلمة سر فقط): يعمر الحقول ويرجع لتبويب SSH SETTINGS بلا اتصال تلقائي. */
-    fun loadFieldsForEditing(fields: Map<String, Any?>) {
+    fun loadFieldsForEditing(originalName: String, fields: Map<String, Any?>) {
         clearActiveImportedConfigSilently()
-        clearServerMessage()
+        editingConfigOriginalName = originalName
         applyFieldsToManualPrefs(fields)
         restoreManualFields()
         updateImportUiState()
@@ -702,18 +826,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * كونفيغ .ml: يعمر الحقول، يبين سيرفر مساج إلا كان موجود، يرجع
-     * لتبويب SSH SETTINGS، ويطلق الاتصال تلقائيا - بلا ما يمس
+     * كيتصل بملف .ml محدد بلا ما يبدل تبويب - كيبقى المستخدم فـCONFIG
+     * tab وكيشوف الصف كيتلون بالأخضر وزر ★ يتبدل لـ■. بلا ما يمس
      * tryConnect/startVpnService/بروتوكول الاتصال نفسو، غير كيستدعيهم
-     * بحال ما يدير المستخدم بيدو.
+     * بحال ما يدير المستخدم بيدو من SSH SETTINGS.
      *
-     * protected = true (ملف بكلمة سر): معلومات السيرفر ماكتبانش أبدا
+     * isProtected = true (ملف بكلمة سر): معلومات السيرفر ماكتبانش أبدا
      * فحقول SSH SETTINGS - كنبنيو نفس نوع الكونفيغ "المستورد" (Imported
      * Config / Xray Config) لي كيستعملها مسار استيراد الكود بالضبط، وهو
-     * كيبين غير ملخص ماسك (Server: xx****) بلا الحقول الخام، بحال ما
-     * كيدير ديجا مع أي كود مستورد.
+     * كيبين غير ملخص ماسك بلا الحقول الخام.
      */
-    fun applyFieldsAndConnect(fields: Map<String, Any?>, serverMessage: String, isProtected: Boolean) {
+    fun connectConfigFile(displayName: String, fields: Map<String, Any?>, isProtected: Boolean) {
         val ok = if (isProtected) {
             applyFieldsAsHiddenImportedConfig(fields)
         } else {
@@ -725,20 +848,26 @@ class MainActivity : AppCompatActivity() {
         }
         if (!ok) return
 
-        pendingServerMessage = serverMessage.trim()
-        manualFieldsPrefs().edit().putString("serverMessage", pendingServerMessage).apply()
-        updateServerMessageBanner()
-
-        val viewPager = findViewById<ViewPager2>(R.id.viewPager)
-        viewPager.currentItem = 0
-        viewPager.post {
-            try {
-                if (!connected && !connecting) tryConnect()
-            } catch (e: Throwable) {
-                appendLog("ERROR: ${e.javaClass.simpleName}: ${e.message ?: "Unknown error"}")
-            }
+        activeConfigFileName = displayName
+        try {
+            if (!connected && !connecting) tryConnect()
+        } catch (e: Throwable) {
+            appendLog("ERROR: ${e.javaClass.simpleName}: ${e.message ?: "Unknown error"}")
         }
+        configFragment?.updateActiveVisuals(activeConfigFileName, connected, connecting)
     }
+
+    /** زر ■ فـCONFIG tab: نفس disconnect() ديال SSH SETTINGS، غير كيمسح الملف "النشط" ويحدث لائحة CONFIG. */
+    fun disconnectConfigFile() {
+        disconnect()
+        activeConfigFileName = null
+        configFragment?.updateActiveVisuals(null, false, false)
+    }
+
+    fun isConfigFileActive(displayName: String): Boolean = activeConfigFileName == displayName
+    fun activeConfigFileNameOrNull(): String? = activeConfigFileName
+    fun isConnectedNow(): Boolean = connected
+    fun isConnectingNow(): Boolean = connecting
 
     /** بلا Toast/ديالوغ "Replace؟" ديال saveImportedConfig/saveXrayConfig - كنمسحو بصمت قبل ما نرجعو لحقول يدوية. */
     private fun clearActiveImportedConfigSilently() {
@@ -851,28 +980,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun updateServerMessageBanner() {
-        val f = sshFragment ?: return
-        if (pendingServerMessage.isNotEmpty()) {
-            f.serverMessageContainer.visibility = View.VISIBLE
-            f.txtServerMessage.text = pendingServerMessage
-        } else {
-            f.serverMessageContainer.visibility = View.GONE
-        }
-    }
-
-    /**
-     * السيرفر مساج تبع الكونفيغ .ml المحمّل ديك الساعة - خاصها تتمسح ملي
-     * المستخدم كيرجع لوضع يدوي (Remove Imported Config / Edit / اختيار
-     * بروتوكول من Choose Protocol) باش ما تبقاش رسالة قديمة معلقة بلا
-     * علاقة بالكونفيغ الحالي.
-     */
-    private fun clearServerMessage() {
-        pendingServerMessage = ""
-        manualFieldsPrefs().edit().remove("serverMessage").apply()
-        updateServerMessageBanner()
-    }
-
     private fun manualFieldsPrefs() = getSharedPreferences("manual_fields", Context.MODE_PRIVATE)
 
     private fun restoreManualFields() {
@@ -897,8 +1004,6 @@ class MainActivity : AppCompatActivity() {
         f.edtSsPassword.setText(p.getString("ssPassword", ""))
         f.chkSsUdp.isChecked = p.getBoolean("ssUdp", true)
         applyProtocolFieldVisibility(f, opt)
-        pendingServerMessage = p.getString("serverMessage", "") ?: ""
-        updateServerMessageBanner()
     }
 
     /**
@@ -1015,7 +1120,9 @@ class MainActivity : AppCompatActivity() {
             XraySecureConfigStore.clear(applicationContext)
             activeXrayConfig = null
         }
-        clearServerMessage()
+        activeConfigFileName = null
+        editingConfigOriginalName = null
+        configFragment?.updateActiveVisuals(null, connected, connecting)
         val f = sshFragment
         if (f != null) {
             f.chkUsePayload.isChecked = opt.usePayload
@@ -1163,7 +1270,9 @@ class MainActivity : AppCompatActivity() {
                 activeImportedConfig = null
                 XraySecureConfigStore.clear(applicationContext)
                 activeXrayConfig = null
-                clearServerMessage()
+                activeConfigFileName = null
+                editingConfigOriginalName = null
+                configFragment?.updateActiveVisuals(null, connected, connecting)
                 updateImportUiState()
                 Toast.makeText(this, "Imported config removed", Toast.LENGTH_SHORT).show()
             }
@@ -1254,6 +1363,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun applyConnectButtonState() {
+        configFragment?.updateActiveVisuals(activeConfigFileName, connected, connecting)
         val f = sshFragment ?: return
         f.btnConnect.isEnabled = true
         // الزر دائري وفيه نص START/STOP (بدل الأيقونة القديمة) - بطلب
@@ -1752,6 +1862,8 @@ class MainActivity : AppCompatActivity() {
             connected = false
             connecting = false
             reconnectingUi = false
+            activeConfigFileName = null
+            configFragment?.updateActiveVisuals(null, false, false)
             applyConnectButtonState()
             // "Disconnected." كيجي من SshVpnService.stopVpn() فقط - ماشي من
             // هنا. كان هادي بالضبط سبب "Disconnected." مرتين فـ Connection
@@ -1851,5 +1963,9 @@ class MainActivity : AppCompatActivity() {
         pulseAnimator?.cancel()
         pulseAnimator = null
         super.onDestroy()
+    }
+
+    companion object {
+        private const val EXTRA_RELAUNCHED = "com.sshproxy.vpn.EXTRA_RELAUNCHED"
     }
 }
