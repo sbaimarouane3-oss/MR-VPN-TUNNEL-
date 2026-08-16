@@ -2064,4 +2064,30 @@ class MainActivity : AppCompatActivity() {
         syncStateFromService()
         // Also re-check for a pending update here, not just onCreate: the
         // VPN may have connected (and discovered an update) while this
-        // Activity was
+        // Activity was backgrounded, in which case onCreate never ran again.
+        showUpdateDialogIfNeeded()
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        val drawer = drawerLayout
+        if (drawer != null && drawer.isDrawerOpen(androidx.core.view.GravityCompat.START)) {
+            drawer.closeDrawer(androidx.core.view.GravityCompat.START)
+        } else {
+            super.onBackPressed()
+        }
+    }
+
+    override fun onDestroy() {
+        try { unregisterReceiver(logReceiver) } catch (_: Throwable) { }
+        try { unregisterReceiver(statusReceiver) } catch (_: Throwable) { }
+        pulseAnimator?.cancel()
+        pulseAnimator = null
+        super.onDestroy()
+    }
+
+    companion object {
+        private const val EXTRA_RELAUNCHED = "com.sshproxy.vpn.EXTRA_RELAUNCHED"
+    }
+}
+
