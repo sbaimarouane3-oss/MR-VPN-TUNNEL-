@@ -136,12 +136,12 @@ object ConfigStorageManager {
     private fun listViaMediaStore(context: Context): List<ConfigFileEntry> {
         val result = mutableListOf<ConfigFileEntry>()
         val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
-        val projection = arrayOf(MediaStore.MediaColumns._ID, MediaStore.Downloads.DISPLAY_NAME, MediaStore.Downloads.RELATIVE_PATH)
+        val projection = arrayOf(MediaStore.Downloads._ID, MediaStore.Downloads.DISPLAY_NAME, MediaStore.Downloads.RELATIVE_PATH)
         val selection = "${MediaStore.Downloads.RELATIVE_PATH} = ? AND ${MediaStore.Downloads.DISPLAY_NAME} LIKE ?"
         val args = arrayOf("${Environment.DIRECTORY_DOWNLOADS}/$SUBFOLDER/", "%.${MlConfigFile.EXTENSION}")
         try {
             context.contentResolver.query(collection, projection, selection, args, "${MediaStore.Downloads.DATE_ADDED} DESC")?.use { c ->
-                val idCol = c.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                val idCol = c.getColumnIndexOrThrow(MediaStore.Downloads._ID)
                 val nameCol = c.getColumnIndexOrThrow(MediaStore.Downloads.DISPLAY_NAME)
                 while (c.moveToNext()) {
                     val id = c.getLong(idCol)
@@ -179,5 +179,62 @@ object ConfigStorageManager {
         val name = uri.lastPathSegment?.substringAfterLast('/') ?: return null
         val candidate = File(dir, name)
         return if (candidate.exists()) candidate else null
+    }
+
+    /**
+     * Read the original filename from a content:// Uri (e.g. the file
+     * Telegram/WhatsApp handed us) via OpenableColumns - NOT via Uri.path,
+     * since content:// Uris don't carry a real filesystem path.
+     */
+    fun queryDisplayName(context: Context, uri: Uri): String? {
+        return try {
+            context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                if (c.moveToFirst()) {
+                    val idx = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (idx >= 0) c.getString(idx) else null
+                } else null
+            }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    /**
+     * كيحفظ ملف جديد بلا ما يبدل شي ملف موجود بنفس الاسم - إلا كان الاسم
+     * مستعمل كيزيد " (1)"، " (2)"... تلقائيا. مستعملة ملي ملف .ml كيوصل
+     * من تلغرام/واتساب خارجيا ويخصو يتحفظ فـCONFIG tab بلا ما يمسح شي
+     * كونفيغ محفوظ بنفس الاسم من قبل.
+     */
+    fun saveDeduped(context: Context, rawName: String, bytes: ByteArray): Pair<Uri, String>? {
+        val existingNames = list(context).map { it.displayName.lowercase() }.toSet()
+        val base = sanitizeFileName(rawName).removeSuffix(".${MlConfigFile.EXTENSION}")
+        var candidate = finalFileName(base)
+        var attempt = 1
+        while (existingNames.contains(candidate.lowercase())) {
+            candidate = finalFileName("$base ($attempt)")
+            attempt++
+        }
+        val uri = save(context, candidate.removeSuffix(".${MlConfigFile.EXTENSION}"), bytes) ?: return null
+        return uri to candidate
+    }
+}
+
+/**
+ * كلمات السر ديال الملفات المحمية اللي دخلها المستخدم بنجاح هاد الجلسة
+ * (session ديال التطبيق فقط - كتنمسح ملي يتسكر البروسيس) - باش الملف
+ * "يبقى مفتوح" وما يطلبش كلمة السر مرة ثانية طول ما التطبيق ماتسكرش.
+ * كنخزنو الحقول (fields) لي تفكت ديجا، ماشي كلمة السر نفسها.
+ */
+object UnlockedConfigCache {
+    private val cache = mutableMapOf<String, Map<String, Any?>>()
+
+    fun get(displayName: String): Map<String, Any?>? = cache[displayName.lowercase()]
+
+    fun put(displayName: String, fields: Map<String, Any?>) {
+        cache[displayName.lowercase()] = fields
+    }
+
+    fun remove(displayName: String) {
+        cache.remove(displayName.lowercase())
     }
 }
