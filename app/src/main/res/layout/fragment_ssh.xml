@@ -698,36 +698,17 @@
                 app:rippleColor="#22FF5459" />
         </LinearLayout>
 
-        <!-- سيرفر مساج (اختياري) - كيبان غير إلا كان الكونفيغ المحمّل فيه رسالة -->
-        <LinearLayout
-            android:id="@+id/serverMessageContainer"
+        <!-- زر إنشاء كونفيغ .ml جديد - تحول من CONFIG tab لهنا، كيفتح نفس
+             ديالوغ الإنشاء (اسم -> كلمة سر اختيارية) اللي فـConfigFragment. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnNewConfig"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:background="@drawable/shape_card_alt"
-            android:padding="14dp"
+            android:layout_height="52dp"
             android:layout_marginTop="16dp"
-            android:visibility="gone">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="SERVER MESSAGE"
-                android:textColor="@color/text_secondary"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.06" />
-
-            <TextView
-                android:id="@+id/txtServerMessage"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:textColor="@color/text_primary"
-                android:textSize="13sp"
-                android:text="" />
-
-        </LinearLayout>
+            android:backgroundTint="@color/accent_blue"
+            android:text="+ NEW CONFIG"
+            android:textColor="#FFFFFF"
+            app:cornerRadius="16dp" />
 
         <View
             android:layout_width="match_parent"
