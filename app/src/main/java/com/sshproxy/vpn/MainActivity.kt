@@ -102,6 +102,17 @@ private val PROTOCOL_OPTIONS = listOf(
 
 private val DEFAULT_PROTOCOL = PROTOCOL_OPTIONS[0]
 
+/**
+ * مصدر الكونفيغ "المخفي" النشط حاليا (activeImportedConfig/activeXrayConfig) -
+ * باش updateImportUiState() يقدر يفرق بين حالتين كيستعملو نفس التخزين
+ * تحت لكن خاصهم واجهة مختلفة تماما:
+ * - IMPORTED: جاي من Import Code / Add (نفس التصميم القديم - "Config
+ *   imported" + زر REMOVE IMPORTED CONFIG).
+ * - SAVED_CONFIG: جاي من تشغيل ملف .ml محفوظ من CONFIG tab (File/
+ *   Protocol/Server/Port فقط - بلا "Config imported" وبلا زر الحذف).
+ */
+private enum class ConfigSource { NONE, IMPORTED, SAVED_CONFIG }
+
 class MainActivity : AppCompatActivity() {
 
     private var connected = false
@@ -143,6 +154,7 @@ class MainActivity : AppCompatActivity() {
     private var deviceInfoLoggedThisLaunch = false
     private var activeImportedConfig: ImportedConfig? = null
     private var activeXrayConfig: ParsedProxyConfig? = null
+    private var configSource: ConfigSource = ConfigSource.NONE
 
     // Animator ديال النبض (pulse) حول الزر الدائري - واحد فقط، ماكيتبداش
     // من جديد كل مرة UI كترفرش (applyConnectButtonState كيتصاوب فوقها
@@ -818,6 +830,8 @@ class MainActivity : AppCompatActivity() {
     /** Edit flow (ConfigFragment "Edit", بلا كلمة سر فقط): يعمر الحقول ويرجع لتبويب SSH SETTINGS بلا اتصال تلقائي. */
     fun loadFieldsForEditing(originalName: String, fields: Map<String, Any?>) {
         clearActiveImportedConfigSilently()
+        activeConfigFileName = null
+        configFragment?.updateActiveVisuals(null, false, false)
         editingConfigOriginalName = originalName
         applyFieldsToManualPrefs(fields)
         restoreManualFields()
@@ -831,24 +845,18 @@ class MainActivity : AppCompatActivity() {
      * tryConnect/startVpnService/بروتوكول الاتصال نفسو، غير كيستدعيهم
      * بحال ما يدير المستخدم بيدو من SSH SETTINGS.
      *
-     * isProtected = true (ملف بكلمة سر): معلومات السيرفر ماكتبانش أبدا
-     * فحقول SSH SETTINGS - كنبنيو نفس نوع الكونفيغ "المستورد" (Imported
-     * Config / Xray Config) لي كيستعملها مسار استيراد الكود بالضبط، وهو
-     * كيبين غير ملخص ماسك بلا الحقول الخام.
+     * دايما كيبني كونفيغ "مخفي" (ImportedConfig/ParsedProxyConfig)،
+     * محمي بكلمة سر ولا لا - وكيبين غير ملخص (File/Protocol/Server/Port)
+     * فـSSH SETTINGS، ماشي "Config imported" (هادشي خاص فقط بـImport
+     * Code - شوف ConfigSource فوق).
      */
     fun connectConfigFile(displayName: String, fields: Map<String, Any?>, isProtected: Boolean) {
-        val ok = if (isProtected) {
-            applyFieldsAsHiddenImportedConfig(fields)
-        } else {
-            clearActiveImportedConfigSilently()
-            applyFieldsToManualPrefs(fields)
-            restoreManualFields()
-            updateImportUiState()
-            true
-        }
+        val ok = applyFieldsAsHiddenImportedConfig(fields)
         if (!ok) return
 
+        configSource = ConfigSource.SAVED_CONFIG
         activeConfigFileName = displayName
+        updateImportUiState()
         try {
             if (!connected && !connecting) tryConnect()
         } catch (e: Throwable) {
@@ -857,10 +865,31 @@ class MainActivity : AppCompatActivity() {
         configFragment?.updateActiveVisuals(activeConfigFileName, connected, connecting)
     }
 
-    /** زر ■ فـCONFIG tab: نفس disconnect() ديال SSH SETTINGS، غير كيمسح الملف "النشط" ويحدث لائحة CONFIG. */
+    /** زر ■ فـCONFIG tab: نفس disconnect() ديال SSH SETTINGS (لي كيمسح activeConfigFileName بحالو - سلوك قديم بلا تغيير) + تحديث لائحة CONFIG. */
     fun disconnectConfigFile() {
         disconnect()
+        configFragment?.updateActiveVisuals(null, false, false)
+    }
+
+    /**
+     * كيتصل بيه ConfigFragment ملي المستخدم يمسح ملف .ml من CONFIG tab.
+     * إلا كان هو نفسو الكونفيغ النشط دابا (سواء متصل ولا لا)، كنمسحو
+     * بالكامل: نوقفو الاتصال إلا كان خدام، نمسحو الكونفيغ المخفي، ونرجعو
+     * SSH SETTINGS لحالة "بلا كونفيغ" - بلا Config imported وبلا ملخص
+     * Saved Config. إلا كان ملف آخر (ماشي هو النشط)، ماكنمسوش حتى حاجة
+     * هنا. الحذف الفعلي ديال الملف (بالإضافة لأي كلمة سر) كيبقى بلا
+     * تغيير - هادي غير مزامنة الحالة فـSSH SETTINGS.
+     */
+    fun handleConfigFileDeleted(displayName: String) {
+        if (activeConfigFileName != displayName) return
+        if (connected || connecting) disconnect()
+        SecureConfigStore.clear(applicationContext)
+        XraySecureConfigStore.clear(applicationContext)
+        activeImportedConfig = null
+        activeXrayConfig = null
         activeConfigFileName = null
+        configSource = ConfigSource.NONE
+        updateImportUiState()
         configFragment?.updateActiveVisuals(null, false, false)
     }
 
@@ -877,6 +906,7 @@ class MainActivity : AppCompatActivity() {
             activeImportedConfig = null
             activeXrayConfig = null
         }
+        configSource = ConfigSource.NONE
     }
 
     /**
@@ -893,7 +923,7 @@ class MainActivity : AppCompatActivity() {
                 val json = (fields["v2rayJson"] as? String)?.trim().orEmpty()
                 try {
                     val cfg = XrayConfigParser.parse(json)
-                    saveXrayConfig(cfg)
+                    storeXrayConfigSilently(cfg)
                     true
                 } catch (e: Throwable) {
                     Toast.makeText(this, "Invalid V2Ray/Xray JSON in this config.", Toast.LENGTH_SHORT).show()
@@ -921,7 +951,7 @@ class MainActivity : AppCompatActivity() {
                     security = if (sni.isNotBlank()) "tls" else "none",
                     sni = sni
                 )
-                saveXrayConfig(cfg)
+                storeXrayConfigSilently(cfg)
                 true
             }
             "Shadowsocks" -> {
@@ -945,7 +975,7 @@ class MainActivity : AppCompatActivity() {
                     network = "tcp",
                     security = "none"
                 )
-                saveXrayConfig(cfg)
+                storeXrayConfigSilently(cfg)
                 true
             }
             else -> {
@@ -974,7 +1004,7 @@ class MainActivity : AppCompatActivity() {
                     udpgwEnabled = (fields["udpgwEnabled"] as? Boolean) ?: false,
                     udpgwPort = fields["udpgwPort"]?.toString()?.toIntOrNull() ?: 7300
                 )
-                saveImportedConfig(cfg)
+                storeImportedConfigSilently(cfg)
                 true
             }
         }
@@ -1120,6 +1150,7 @@ class MainActivity : AppCompatActivity() {
             XraySecureConfigStore.clear(applicationContext)
             activeXrayConfig = null
         }
+        configSource = ConfigSource.NONE
         activeConfigFileName = null
         editingConfigOriginalName = null
         configFragment?.updateActiveVisuals(null, connected, connecting)
@@ -1237,9 +1268,26 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** تخزين بلا أي Toast/log/UI - كتستعمل غير من applyFieldsAsHiddenImportedConfig (مسار Saved Config)، ماشي من Import Code. */
+    private fun storeXrayConfigSilently(cfg: ParsedProxyConfig) {
+        SecureConfigStore.clear(applicationContext)
+        activeImportedConfig = null
+        XraySecureConfigStore.save(applicationContext, cfg)
+        activeXrayConfig = cfg
+    }
+
+    /** تخزين بلا أي Toast/log/UI - كتستعمل غير من applyFieldsAsHiddenImportedConfig (مسار Saved Config)، ماشي من Import Code. */
+    private fun storeImportedConfigSilently(cfg: ImportedConfig) {
+        XraySecureConfigStore.clear(applicationContext)
+        activeXrayConfig = null
+        SecureConfigStore.save(applicationContext, cfg)
+        activeImportedConfig = cfg
+    }
+
     private fun saveXrayConfig(cfg: ParsedProxyConfig) {
         // كونفيغ واحد فقط مسموح - إلا كان SSH config محفوظ نمحيوه (نفس
         // القاعدة "config واحد" ديال SecureConfigStore القديمة).
+        configSource = ConfigSource.IMPORTED
         SecureConfigStore.clear(applicationContext)
         activeImportedConfig = null
 
@@ -1251,6 +1299,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun saveImportedConfig(cfg: ImportedConfig) {
+        configSource = ConfigSource.IMPORTED
         XraySecureConfigStore.clear(applicationContext)
         activeXrayConfig = null
 
@@ -1270,6 +1319,7 @@ class MainActivity : AppCompatActivity() {
                 activeImportedConfig = null
                 XraySecureConfigStore.clear(applicationContext)
                 activeXrayConfig = null
+                configSource = ConfigSource.NONE
                 activeConfigFileName = null
                 editingConfigOriginalName = null
                 configFragment?.updateActiveVisuals(null, connected, connecting)
@@ -1290,24 +1340,55 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateImportUiState() {
         val f = sshFragment ?: return
-        val ssh = activeImportedConfig
-        val xray = activeXrayConfig
-        if (xray != null) {
-            f.importedStatusContainer.visibility = View.VISIBLE
-            f.txtImportedStatus.text = xray.summary()
-            f.manualFieldsContainer.visibility = View.GONE
-        } else if (ssh != null) {
-            f.importedStatusContainer.visibility = View.VISIBLE
-            f.txtImportedStatus.text = ssh.maskedSummary()
-            f.manualFieldsContainer.visibility = View.GONE
-        } else {
-            f.importedStatusContainer.visibility = View.GONE
-            f.manualFieldsContainer.visibility = View.VISIBLE
+        when (configSource) {
+            ConfigSource.IMPORTED -> {
+                val ssh = activeImportedConfig
+                val xray = activeXrayConfig
+                f.importedStatusContainer.visibility = View.VISIBLE
+                f.txtImportedStatus.text = xray?.summary() ?: ssh?.maskedSummary() ?: ""
+                f.savedConfigStatusContainer.visibility = View.GONE
+                f.manualFieldsContainer.visibility = View.GONE
+            }
+            ConfigSource.SAVED_CONFIG -> {
+                f.importedStatusContainer.visibility = View.GONE
+                f.savedConfigStatusContainer.visibility = View.VISIBLE
+                f.txtSavedConfigInfo.text = buildSavedConfigSummary()
+                f.manualFieldsContainer.visibility = View.GONE
+            }
+            ConfigSource.NONE -> {
+                f.importedStatusContainer.visibility = View.GONE
+                f.savedConfigStatusContainer.visibility = View.GONE
+                f.manualFieldsContainer.visibility = View.VISIBLE
+            }
         }
         // تحديث فوري لـ Card ديال Server/Protocol/Port بعد أي تغيير فـ
         // الكونفيغ المستورد (عرض فقط - نفس الأعلام لي كايستعملهم
         // applyConnectButtonState() بلا ما نمس منطق الاستيراد فوق).
         updateConnectionSummary()
+    }
+
+    /** File/Protocol/Server/Port فقط - بلا "Config imported" وبلا أي حقول خام. Status كاين ديجا فكارد Connection Details. */
+    private fun buildSavedConfigSummary(): String {
+        val name = activeConfigFileName?.removeSuffix(".${MlConfigFile.EXTENSION}") ?: "\u2014"
+        val xray = activeXrayConfig
+        val ssh = activeImportedConfig
+        val protocol: String
+        val server: String
+        val port: String
+        when {
+            xray != null -> {
+                protocol = xray.protocol.name + if (xray.security != "none") " \u2022 ${xray.security.uppercase()}" else ""
+                server = maskForDisplay(xray.address)
+                port = if (xray.port > 0) xray.port.toString() else "\u2014"
+            }
+            ssh != null -> {
+                protocol = ssh.protocolLabel()
+                server = maskForDisplay(ssh.host)
+                port = ssh.port.toString()
+            }
+            else -> { protocol = "\u2014"; server = "\u2014"; port = "\u2014" }
+        }
+        return "File: $name\nProtocol: $protocol\nServer: $server\nPort: $port"
     }
 
     private fun startLogPolling() {
