@@ -731,34 +731,55 @@ class MainActivity : AppCompatActivity() {
     // اسم -> كلمة سر اختيارية -> حفظ. بلا خطوة سيرفر مساج (تحيدات).
 
     private fun showNewConfigNameDialog() {
-        val nameInput = EditText(this).apply { hint = "Config name (any text/emoji)" }
+        val isEditing = editingConfigOriginalName != null
+        val prefillName = if (isEditing) {
+            editingConfigOriginalName!!.removeSuffix(".${MlConfigFile.EXTENSION}")
+        } else ""
+        val nameInput = EditText(this).apply {
+            hint = "Config name (any text/emoji)"
+            if (prefillName.isNotEmpty()) {
+                setText(prefillName)
+                setSelection(prefillName.length)
+            }
+        }
         AlertDialog.Builder(this)
-            .setTitle("New Config")
-            .setMessage("Name this config. It will be created from your current SSH SETTINGS.")
+            .setTitle(if (isEditing) "Edit Config" else "New Config")
+            .setMessage(
+                if (isEditing) "Update your changes, then save them back into this same config file."
+                else "Name this config. It will be created from your current SSH SETTINGS."
+            )
             .setView(nameInput)
-            .setPositiveButton("Next") { _, _ ->
+            .setPositiveButton(if (isEditing) "Save" else "Next") { _, _ ->
                 val name = nameInput.text.toString().trim()
                 if (name.isEmpty()) {
                     Toast.makeText(this, "Please enter a name.", Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
-                lifecycleScope.launch {
-                    val fileName = ConfigStorageManager.finalFileName(name)
-                    val existing = withContext(Dispatchers.IO) { ConfigStorageManager.list(applicationContext) }
-                        .firstOrNull { it.displayName.equals(fileName, ignoreCase = true) }
-                    val isEditingThisOne = editingConfigOriginalName != null &&
-                        fileName.equals(editingConfigOriginalName, ignoreCase = true)
-                    if (existing != null && !isEditingThisOne) {
-                        // ممنوع تكرار نفس اسم الملف - كنطلبو اسم آخر بدل
-                        // ما نبدلو الملف بصمت.
-                        Toast.makeText(
-                            this@MainActivity,
-                            "\"$fileName\" already exists. Please choose a different name.",
-                            Toast.LENGTH_LONG
-                        ).show()
-                        showNewConfigNameDialog()
-                    } else {
-                        showNewConfigPasswordDialog(name)
+                if (isEditing) {
+                    // Edit فـConfigFragment ماكاينش إلا للملفات بلا كلمة سر
+                    // (شوف btnEdit.visibility فـConfigFragment) - إذن الحفظ
+                    // هنا دايما بلا كلمة سر، باش الحماية (أو غيابها) تبقى
+                    // كما هي بلا ما نخلقو حماية جديدة ولا نضيعوها. الحفظ
+                    // كيدير In-Place مباشرة عبر editingConfigOriginalName -
+                    // شوف saveNewConfig().
+                    saveNewConfig(name, "")
+                } else {
+                    lifecycleScope.launch {
+                        val fileName = ConfigStorageManager.finalFileName(name)
+                        val existing = withContext(Dispatchers.IO) { ConfigStorageManager.list(applicationContext) }
+                            .firstOrNull { it.displayName.equals(fileName, ignoreCase = true) }
+                        if (existing != null) {
+                            // ممنوع تكرار نفس اسم الملف - كنطلبو اسم آخر بدل
+                            // ما نبدلو الملف بصمت.
+                            Toast.makeText(
+                                this@MainActivity,
+                                "\"$fileName\" already exists. Please choose a different name.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                            showNewConfigNameDialog()
+                        } else {
+                            showNewConfigPasswordDialog(name)
+                        }
                     }
                 }
             }
@@ -780,22 +801,43 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    /**
+     * كيحفظ الكونفيغ - جديد أو تعديل. فحالة التعديل (editingConfigOriginalName
+     * != null) كيدير الحفظ In-Place: كيستهدف نفس الملف الأصلي مباشرة عبر
+     * editingConfigOriginalName (بلا أي مقارنة مع الاسم لي كتب المستخدم فـ
+     * الديالوغ)، ويبدل محتواه بـConfigStorageManager.overwrite() - نفس الـURI،
+     * نفس اسم الملف على القرص، بلا نسخة ثانية. إذا الملف الأصلي ماكاينش
+     * (تحيد بطريقة ما)، كنرجعو نديرو ملف جديد باش ماتضيعش التعديلات.
+     */
     private fun saveNewConfig(name: String, password: String) {
         val fields = currentManualFieldsSnapshot()
         val bytes = MlConfigFile.build(name, "", fields, password.ifBlank { null })
-        val fileName = ConfigStorageManager.finalFileName(name)
+        val editingOriginal = editingConfigOriginalName
 
         lifecycleScope.launch {
-            val existing = withContext(Dispatchers.IO) { ConfigStorageManager.list(applicationContext) }
-                .firstOrNull { it.displayName.equals(fileName, ignoreCase = true) }
-            val ok = withContext(Dispatchers.IO) {
-                if (existing != null) ConfigStorageManager.overwrite(applicationContext, existing, bytes)
+            val allEntries = withContext(Dispatchers.IO) { ConfigStorageManager.list(applicationContext) }
+            val ok: Boolean
+            val savedFileName: String
+            if (editingOriginal != null) {
+                val target = allEntries.firstOrNull { it.displayName.equals(editingOriginal, ignoreCase = true) }
+                if (target != null) {
+                    ok = withContext(Dispatchers.IO) { ConfigStorageManager.overwrite(applicationContext, target, bytes) }
+                    savedFileName = target.displayName
+                } else {
+                    ok = ConfigStorageManager.save(applicationContext, name, bytes) != null
+                    savedFileName = ConfigStorageManager.finalFileName(name)
+                }
+            } else {
+                val fileName = ConfigStorageManager.finalFileName(name)
+                val existing = allEntries.firstOrNull { it.displayName.equals(fileName, ignoreCase = true) }
+                ok = if (existing != null) ConfigStorageManager.overwrite(applicationContext, existing, bytes)
                 else ConfigStorageManager.save(applicationContext, name, bytes) != null
+                savedFileName = fileName
             }
             if (ok) {
                 Toast.makeText(this@MainActivity, "Config saved to Download/MR VPN TUNNEL \u2705", Toast.LENGTH_SHORT).show()
                 editingConfigOriginalName = null
-                UnlockedConfigCache.remove(fileName)
+                UnlockedConfigCache.remove(savedFileName)
             } else {
                 Toast.makeText(this@MainActivity, "Could not save config.", Toast.LENGTH_SHORT).show()
             }
@@ -851,6 +893,12 @@ class MainActivity : AppCompatActivity() {
      * Code - شوف ConfigSource فوق).
      */
     fun connectConfigFile(displayName: String, fields: Map<String, Any?>, isProtected: Boolean) {
+        // Config واحد فقط مسموح فنفس الوقت: إلا كان فيه اتصال/محاولة اتصال
+        // جارية بملف آخر، نقطعوها أولا قبل ما نبداو هاد الملف الجديد.
+        if ((connected || connecting) && activeConfigFileName != displayName) {
+            disconnect()
+        }
+
         val ok = applyFieldsAsHiddenImportedConfig(fields)
         if (!ok) return
 
@@ -1346,49 +1394,28 @@ class MainActivity : AppCompatActivity() {
                 val xray = activeXrayConfig
                 f.importedStatusContainer.visibility = View.VISIBLE
                 f.txtImportedStatus.text = xray?.summary() ?: ssh?.maskedSummary() ?: ""
-                f.savedConfigStatusContainer.visibility = View.GONE
                 f.manualFieldsContainer.visibility = View.GONE
+                f.btnNewConfig.visibility = View.VISIBLE
             }
             ConfigSource.SAVED_CONFIG -> {
+                // بلا بطاقة "USING SAVED CONFIG" منفصلة - اسم الملف كيبان
+                // دابا كسطر "File" جوا كارد Connection Details نفسها
+                // (شوف updateConnectionSummary()). + NEW CONFIG كيخبى ما
+                // دام Config محفوظة هي المستعملة حاليا.
                 f.importedStatusContainer.visibility = View.GONE
-                f.savedConfigStatusContainer.visibility = View.VISIBLE
-                f.txtSavedConfigInfo.text = buildSavedConfigSummary()
                 f.manualFieldsContainer.visibility = View.GONE
+                f.btnNewConfig.visibility = View.GONE
             }
             ConfigSource.NONE -> {
                 f.importedStatusContainer.visibility = View.GONE
-                f.savedConfigStatusContainer.visibility = View.GONE
                 f.manualFieldsContainer.visibility = View.VISIBLE
+                f.btnNewConfig.visibility = View.VISIBLE
             }
         }
-        // تحديث فوري لـ Card ديال Server/Protocol/Port بعد أي تغيير فـ
+        // تحديث فوري لـ Card ديال Server/Protocol/Port/File بعد أي تغيير فـ
         // الكونفيغ المستورد (عرض فقط - نفس الأعلام لي كايستعملهم
         // applyConnectButtonState() بلا ما نمس منطق الاستيراد فوق).
         updateConnectionSummary()
-    }
-
-    /** File/Protocol/Server/Port فقط - بلا "Config imported" وبلا أي حقول خام. Status كاين ديجا فكارد Connection Details. */
-    private fun buildSavedConfigSummary(): String {
-        val name = activeConfigFileName?.removeSuffix(".${MlConfigFile.EXTENSION}") ?: "\u2014"
-        val xray = activeXrayConfig
-        val ssh = activeImportedConfig
-        val protocol: String
-        val server: String
-        val port: String
-        when {
-            xray != null -> {
-                protocol = xray.protocol.name + if (xray.security != "none") " \u2022 ${xray.security.uppercase()}" else ""
-                server = maskForDisplay(xray.address)
-                port = if (xray.port > 0) xray.port.toString() else "\u2014"
-            }
-            ssh != null -> {
-                protocol = ssh.protocolLabel()
-                server = maskForDisplay(ssh.host)
-                port = ssh.port.toString()
-            }
-            else -> { protocol = "\u2014"; server = "\u2014"; port = "\u2014" }
-        }
-        return "File: $name\nProtocol: $protocol\nServer: $server\nPort: $port"
     }
 
     private fun startLogPolling() {
@@ -1616,6 +1643,19 @@ class MainActivity : AppCompatActivity() {
         f.txtServerValue.text = server
         f.txtProtocolValue.text = protocol
         f.txtPortValue.text = port
+
+        // File: كيبان غير ملي Config محفوظة هي المستعملة حاليا (configSource
+        // == SAVED_CONFIG)، بلا علاقة بحالة الاتصال (Connected/Disconnected).
+        // ما دام ماشي Saved Config (Import Code أو حقول يدوية)، السطر كيخبى
+        // بالكامل. اسم الملف كيتزامن مباشرة مع activeConfigFileName الحالي.
+        if (configSource == ConfigSource.SAVED_CONFIG && activeConfigFileName != null) {
+            f.dividerFile.visibility = View.VISIBLE
+            f.rowFile.visibility = View.VISIBLE
+            f.txtFileValue.text = activeConfigFileName!!.removeSuffix(".${MlConfigFile.EXTENSION}")
+        } else {
+            f.dividerFile.visibility = View.GONE
+            f.rowFile.visibility = View.GONE
+        }
     }
 
     /** كيخبي جزء من عنوان السيرفر فالعرض فقط (مثلا za**********) - بلا
@@ -2024,29 +2064,4 @@ class MainActivity : AppCompatActivity() {
         syncStateFromService()
         // Also re-check for a pending update here, not just onCreate: the
         // VPN may have connected (and discovered an update) while this
-        // Activity was backgrounded, in which case onCreate never ran again.
-        showUpdateDialogIfNeeded()
-    }
-
-    @Suppress("DEPRECATION")
-    override fun onBackPressed() {
-        val drawer = drawerLayout
-        if (drawer != null && drawer.isDrawerOpen(androidx.core.view.GravityCompat.START)) {
-            drawer.closeDrawer(androidx.core.view.GravityCompat.START)
-        } else {
-            super.onBackPressed()
-        }
-    }
-
-    override fun onDestroy() {
-        try { unregisterReceiver(logReceiver) } catch (_: Throwable) { }
-        try { unregisterReceiver(statusReceiver) } catch (_: Throwable) { }
-        pulseAnimator?.cancel()
-        pulseAnimator = null
-        super.onDestroy()
-    }
-
-    companion object {
-        private const val EXTRA_RELAUNCHED = "com.sshproxy.vpn.EXTRA_RELAUNCHED"
-    }
-}
+        // Activity was
