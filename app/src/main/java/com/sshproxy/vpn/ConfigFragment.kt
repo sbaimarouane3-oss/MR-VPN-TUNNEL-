@@ -21,26 +21,28 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * تبويب CONFIG: لائحة كل ملفات .ml المحفوظة فـ Downloads/MR VPN TUNNEL،
- * + زر أزرق كيدير كونفيغ جديد من الحقول الحالية فـ SSH SETTINGS.
- *
- * ماعندهاش أي منطق اتصال مباشر - كتعتمد كليا على MainActivity
- * (currentManualFieldsSnapshot / applyFieldsAndConnect) باش بروتوكول
- * الاتصال الحقيقي يبقى بلا تغيير.
+ * تبويب CONFIG: لائحة كل ملفات .ml المحفوظة فـ Downloads/MR VPN TUNNEL.
+ * الزر ★ فوسط كل صف كيبدا/كيوقف الاتصال بهاد الكونفيغ بالضبط بلا ما
+ * نخرجو من هاد التبويب (شوف MainActivity.connectConfigFile /
+ * disconnectConfigFile). الضغط على جسم الصف كيبين/كيخبي لوحة موسعة
+ * (Info + Edit/Share/Delete) فنفس المكان - بلا Dialog وبلا تبديل تبويب.
+ * إنشاء كونفيغ جديد صار من زر "+ NEW CONFIG" فـ SSH SETTINGS، ماشي من هنا.
  */
 class ConfigFragment : Fragment(R.layout.fragment_config) {
 
     private lateinit var llConfigList: LinearLayout
     private lateinit var txtConfigEmpty: TextView
-    private lateinit var btnAddConfig: View
+
+    // كاش خفيف للصفوف المبنية دابا - باش updateActiveVisuals() يقدر
+    // يبدل لون/أيقونة الصف النشط بلا ما يعاود يقرا من القرص فكل مرة
+    // الحالة (Connecting/Connected/Disconnected) كتبدل.
+    private val rowViews = mutableMapOf<String, View>()
+    private val expandedNames = mutableSetOf<String>()
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         llConfigList = view.findViewById(R.id.llConfigList)
         txtConfigEmpty = view.findViewById(R.id.txtConfigEmpty)
-        btnAddConfig = view.findViewById(R.id.btnAddConfig)
-
-        btnAddConfig.setOnClickListener { startCreateFlow() }
 
         (requireActivity() as? MainActivity)?.onConfigFragmentReady(this)
         refreshList()
@@ -48,13 +50,53 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
 
     fun refreshList() {
         val ctx = context ?: return
+        val activity = requireActivity() as? MainActivity
         lifecycleScope.launch {
             val entries = withContext(Dispatchers.IO) { ConfigStorageManager.list(ctx) }
             if (!isAdded) return@launch
             llConfigList.removeAllViews()
+            rowViews.clear()
             txtConfigEmpty.visibility = if (entries.isEmpty()) View.VISIBLE else View.GONE
             for (entry in entries) {
-                llConfigList.addView(buildRow(entry))
+                val row = buildRow(entry)
+                rowViews[entry.displayName] = row
+                llConfigList.addView(row)
+            }
+            val activeName = activity?.activeConfigFileNameOrNull()
+            if (activeName != null) {
+                updateActiveVisuals(activeName, activity?.isConnectedNow() ?: false, activity?.isConnectingNow() ?: false)
+            }
+        }
+    }
+
+    /**
+     * كتبدل غير الشكل البصري (لون الصف + أيقونة ★/■) حسب الحالة الحالية -
+     * بلا ما تعاود تقرا الملفات من القرص. MainActivity كتناديها كل مرة
+     * connected/connecting كيتبدلو فعليا.
+     */
+    fun updateActiveVisuals(activeName: String?, connected: Boolean, connecting: Boolean) {
+        if (!isAdded) return
+        for ((name, row) in rowViews) {
+            val rowCard = row.findViewById<View>(R.id.rowConfigItem)
+            val actionBg = row.findViewById<View>(R.id.btnConfigAction)
+            val actionIcon = row.findViewById<ImageView>(R.id.imgConfigAction)
+            val isThisOne = name == activeName
+            if (isThisOne && (connected || connecting)) {
+                rowCard.setBackgroundResource(R.drawable.shape_card_active)
+                if (connected) {
+                    actionBg.setBackgroundResource(R.drawable.shape_config_action_red)
+                    actionIcon.setImageResource(R.drawable.ic_stop_square)
+                } else {
+                    // Connecting...: نفس شكل STOP لكن كنخليو الأيقونة ديال
+                    // النجمة باش يبان الضغط عليها غادي يلغي المحاولة
+                    // (نفس disconnect() ديال الاتصال العادي).
+                    actionBg.setBackgroundResource(R.drawable.shape_config_action_red)
+                    actionIcon.setImageResource(R.drawable.ic_stop_square)
+                }
+            } else {
+                rowCard.setBackgroundResource(R.drawable.shape_card_alt)
+                actionBg.setBackgroundResource(R.drawable.shape_config_action_green)
+                actionIcon.setImageResource(R.drawable.ic_star)
             }
         }
     }
@@ -64,23 +106,62 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
         val txtName = row.findViewById<TextView>(R.id.txtConfigName)
         val txtMeta = row.findViewById<TextView>(R.id.txtConfigMeta)
         val imgLock = row.findViewById<ImageView>(R.id.imgConfigLock)
+        val rowCard = row.findViewById<View>(R.id.rowConfigItem)
+        val btnAction = row.findViewById<View>(R.id.btnConfigAction)
+        val expandPanel = row.findViewById<LinearLayout>(R.id.expandConfigPanel)
+        val txtInfo = row.findViewById<TextView>(R.id.txtConfigInfo)
+        val btnEdit = row.findViewById<View>(R.id.btnConfigEdit)
+        val btnShare = row.findViewById<View>(R.id.btnConfigShare)
+        val btnDelete = row.findViewById<View>(R.id.btnConfigDelete)
 
         val displayName = entry.displayName.removeSuffix(".${MlConfigFile.EXTENSION}")
         txtName.text = displayName
-        txtMeta.text = if (entry.isEncrypted) "\uD83D\uDD12 Password protected" else "Unprotected \u2022 tap & hold for options"
+        txtMeta.text = if (entry.isEncrypted) "\uD83D\uDD12 Password protected" else "Unprotected \u2022 tap for details"
+        imgLock.setImageResource(if (entry.isEncrypted) R.drawable.ic_lock else R.drawable.ic_check_circle)
         imgLock.setColorFilter(
             ContextCompat.getColor(requireContext(), if (entry.isEncrypted) R.color.state_error else R.color.accent_green)
         )
 
-        row.setOnClickListener { openEntry(entry) }
-        row.setOnLongClickListener { showEntryMenu(entry); true }
+        // Edit/Share مسموحين دايما للملف بلا كلمة سر - ملف بكلمة سر:
+        // Share و Delete غير (بلا Edit، حيت التعديل خاصو يقرا المحتوى
+        // الخام والملف مصمم باش حتى التطبيق ما يقدر يوريه بلا الكلمة).
+        btnEdit.visibility = if (entry.isEncrypted) View.GONE else View.VISIBLE
+
+        btnAction.setOnClickListener { onActionTapped(entry) }
+
+        rowCard.setOnClickListener {
+            if (expandedNames.contains(entry.displayName)) {
+                expandedNames.remove(entry.displayName)
+                expandPanel.visibility = View.GONE
+            } else {
+                expandedNames.add(entry.displayName)
+                expandPanel.visibility = View.VISIBLE
+                txtInfo.text = if (entry.isEncrypted) {
+                    "This config is password protected. Only sharing and deleting are available - its contents can't be shown or edited without the password."
+                } else {
+                    "Unprotected config. You can edit its fields, share the file, or delete it."
+                }
+            }
+        }
+
+        btnEdit.setOnClickListener { editEntry(entry) }
+        btnShare.setOnClickListener { shareEntry(entry) }
+        btnDelete.setOnClickListener { confirmDelete(entry) }
+
         return row
     }
 
-    // ===== فتح ملف (تاب داخل CONFIG، أو جاي من نية VIEW خارجية) =====
+    // ===== زر ★/■: بدء/وقف الاتصال بهاد الكونفيغ بالضبط، بلا مغادرة CONFIG tab =====
 
-    private fun openEntry(entry: ConfigFileEntry) {
+    private fun onActionTapped(entry: ConfigFileEntry) {
         val ctx = context ?: return
+        val activity = requireActivity() as? MainActivity ?: return
+
+        if (activity.isConfigFileActive(entry.displayName) && (activity.isConnectedNow() || activity.isConnectingNow())) {
+            activity.disconnectConfigFile()
+            return
+        }
+
         lifecycleScope.launch {
             val bytes = withContext(Dispatchers.IO) { ConfigStorageManager.readBytes(ctx, entry.uri) }
             if (bytes == null) {
@@ -88,14 +169,24 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
                 return@launch
             }
             if (entry.isEncrypted) {
-                promptPasswordAndOpen(bytes)
+                val cached = UnlockedConfigCache.get(entry.displayName)
+                if (cached != null) {
+                    activity.connectConfigFile(entry.displayName, cached, isProtected = true)
+                } else {
+                    promptPasswordAndConnect(entry, bytes)
+                }
             } else {
-                applyParsedConfig(bytes, null, isProtected = false)
+                try {
+                    val parsed = withContext(Dispatchers.Default) { MlConfigFile.parse(bytes, null) }
+                    activity.connectConfigFile(entry.displayName, parsed.fields, isProtected = false)
+                } catch (_: Throwable) {
+                    Toast.makeText(ctx, "Invalid or corrupted config file.", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
 
-    private fun promptPasswordAndOpen(bytes: ByteArray) {
+    private fun promptPasswordAndConnect(entry: ConfigFileEntry, bytes: ByteArray) {
         val ctx = context ?: return
         val input = EditText(ctx).apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
@@ -103,42 +194,28 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
         }
         AlertDialog.Builder(ctx)
             .setTitle("Protected Config")
-            .setMessage("This config is password protected. Enter the password to open it.")
+            .setMessage("Enter the password to connect. You'll only need to enter it once this session - the file stays locked, but you won't be asked again while the app is open.")
             .setView(wrapDialogInput(input))
-            .setPositiveButton("Open") { _, _ -> applyParsedConfig(bytes, input.text.toString(), isProtected = true) }
+            .setPositiveButton("Connect") { _, _ ->
+                val password = input.text.toString()
+                val activity = requireActivity() as? MainActivity ?: return@setPositiveButton
+                lifecycleScope.launch {
+                    try {
+                        val parsed = withContext(Dispatchers.Default) { MlConfigFile.parse(bytes, password) }
+                        UnlockedConfigCache.put(entry.displayName, parsed.fields)
+                        activity.connectConfigFile(entry.displayName, parsed.fields, isProtected = true)
+                    } catch (_: MlConfigParseException) {
+                        Toast.makeText(ctx, "Wrong password.", Toast.LENGTH_SHORT).show()
+                    } catch (_: Throwable) {
+                        Toast.makeText(ctx, "Wrong password.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
-    private fun applyParsedConfig(bytes: ByteArray, password: String?, isProtected: Boolean) {
-        val ctx = context ?: return
-        try {
-            val parsed = MlConfigFile.parse(bytes, password)
-            (requireActivity() as? MainActivity)?.applyFieldsAndConnect(parsed.fields, parsed.serverMessage, isProtected)
-        } catch (e: MlConfigParseException) {
-            val msg = if (e.message == "wrong password") "Wrong password." else "Invalid or corrupted config file."
-            Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
-        } catch (_: Throwable) {
-            Toast.makeText(ctx, "Invalid or corrupted config file.", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    // ===== قائمة الضغط المطول: Edit/Delete/Share (بلا كلمة سر) أو Delete/Share (بكلمة سر) =====
-
-    private fun showEntryMenu(entry: ConfigFileEntry) {
-        val ctx = context ?: return
-        val actions = if (entry.isEncrypted) listOf("Delete", "Share") else listOf("Edit", "Delete", "Share")
-        AlertDialog.Builder(ctx)
-            .setTitle(entry.displayName.removeSuffix(".${MlConfigFile.EXTENSION}"))
-            .setItems(actions.toTypedArray()) { _, which ->
-                when (actions[which]) {
-                    "Edit" -> editEntry(entry)
-                    "Delete" -> confirmDelete(entry)
-                    "Share" -> shareEntry(entry)
-                }
-            }
-            .show()
-    }
+    // ===== لوحة موسعة: Edit / Share / Delete (Edit غير للملفات بلا كلمة سر) =====
 
     private fun editEntry(entry: ConfigFileEntry) {
         val ctx = context ?: return
@@ -150,13 +227,8 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
             }
             try {
                 val parsed = MlConfigFile.parse(bytes, null)
-                (requireActivity() as? MainActivity)?.loadFieldsForEditing(parsed.fields)
-                val baseName = entry.displayName.removeSuffix(".${MlConfigFile.EXTENSION}")
-                Toast.makeText(
-                    ctx,
-                    "Loaded into SSH SETTINGS. Edit the fields, then tap + here and use the same name \"$baseName\" to overwrite it.",
-                    Toast.LENGTH_LONG
-                ).show()
+                (requireActivity() as? MainActivity)?.loadFieldsForEditing(entry.displayName, parsed.fields)
+                Toast.makeText(ctx, "Loaded into SSH SETTINGS for editing. Use + NEW CONFIG to save your changes.", Toast.LENGTH_LONG).show()
             } catch (_: Throwable) {
                 Toast.makeText(ctx, "Could not load config for editing.", Toast.LENGTH_SHORT).show()
             }
@@ -165,11 +237,16 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
 
     private fun confirmDelete(entry: ConfigFileEntry) {
         val ctx = context ?: return
+        val activity = requireActivity() as? MainActivity
         AlertDialog.Builder(ctx)
             .setTitle("Delete Config")
             .setMessage("Delete \"${entry.displayName}\"? This cannot be undone.")
             .setPositiveButton("Delete") { _, _ ->
                 lifecycleScope.launch {
+                    if (activity?.isConfigFileActive(entry.displayName) == true) {
+                        activity.disconnectConfigFile()
+                    }
+                    UnlockedConfigCache.remove(entry.displayName)
                     val ok = withContext(Dispatchers.IO) { ConfigStorageManager.delete(ctx, entry) }
                     if (!ok) Toast.makeText(ctx, "Could not delete file.", Toast.LENGTH_SHORT).show()
                     refreshList()
@@ -190,93 +267,6 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
             startActivity(Intent.createChooser(intent, "Share Config"))
         } catch (_: Throwable) {
             Toast.makeText(ctx, "Could not share file.", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    // ===== إنشاء كونفيغ جديد: اسم -> كلمة سر (اختياري) -> سيرفر مساج (اختياري) =====
-
-    private fun startCreateFlow() {
-        val ctx = context ?: return
-        val nameInput = EditText(ctx).apply { hint = "Config name (any text/emoji)" }
-        AlertDialog.Builder(ctx)
-            .setTitle("New Config")
-            .setMessage("Name this config. It will be created from your current SSH SETTINGS.")
-            .setView(wrapDialogInput(nameInput))
-            .setPositiveButton("Next") { _, _ ->
-                val name = nameInput.text.toString().trim()
-                if (name.isEmpty()) {
-                    Toast.makeText(ctx, "Please enter a name.", Toast.LENGTH_SHORT).show()
-                } else {
-                    askPasswordStep(name)
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun askPasswordStep(name: String) {
-        val ctx = context ?: return
-        val passInput = EditText(ctx).apply {
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            hint = "Password (optional - leave empty for no protection)"
-        }
-        AlertDialog.Builder(ctx)
-            .setTitle("Protect with a Password?")
-            .setMessage("If you set a password, the file will be strongly encrypted (AES-256) and no one can read the server info inside without it. Leave empty to keep the file open/editable.")
-            .setView(wrapDialogInput(passInput))
-            .setPositiveButton("Next") { _, _ -> askServerMessageStep(name, passInput.text.toString()) }
-            .setNegativeButton("Back") { _, _ -> startCreateFlow() }
-            .show()
-    }
-
-    private fun askServerMessageStep(name: String, password: String) {
-        val ctx = context ?: return
-        val msgInput = EditText(ctx).apply { hint = "Server message shown on connect (optional)" }
-        AlertDialog.Builder(ctx)
-            .setTitle("Server Message")
-            .setMessage("Optional message shown at the bottom of the screen when this config connects.")
-            .setView(wrapDialogInput(msgInput))
-            .setPositiveButton("Save") { _, _ -> saveConfig(name, password, msgInput.text.toString()) }
-            .setNegativeButton("Back") { _, _ -> askPasswordStep(name) }
-            .show()
-    }
-
-    private fun saveConfig(name: String, password: String, serverMessage: String) {
-        val ctx = context ?: return
-        val activity = requireActivity() as? MainActivity ?: return
-        val fields = activity.currentManualFieldsSnapshot()
-        val bytes = MlConfigFile.build(name, serverMessage.trim(), fields, password.ifBlank { null })
-        val fileName = ConfigStorageManager.finalFileName(name)
-
-        lifecycleScope.launch {
-            val existing = withContext(Dispatchers.IO) { ConfigStorageManager.list(ctx) }
-                .firstOrNull { it.displayName.equals(fileName, ignoreCase = true) }
-
-            fun doSave() {
-                lifecycleScope.launch {
-                    val ok = withContext(Dispatchers.IO) {
-                        if (existing != null) ConfigStorageManager.overwrite(ctx, existing, bytes)
-                        else ConfigStorageManager.save(ctx, name, bytes) != null
-                    }
-                    if (ok) {
-                        Toast.makeText(ctx, "Config saved to Download/MR VPN TUNNEL \u2705", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(ctx, "Could not save config.", Toast.LENGTH_SHORT).show()
-                    }
-                    refreshList()
-                }
-            }
-
-            if (existing != null) {
-                AlertDialog.Builder(ctx)
-                    .setTitle("Replace existing config?")
-                    .setMessage("A config named \"$fileName\" already exists. Overwrite it?")
-                    .setPositiveButton("Replace") { _, _ -> doSave() }
-                    .setNegativeButton("Cancel", null)
-                    .show()
-            } else {
-                doSave()
-            }
         }
     }
 
