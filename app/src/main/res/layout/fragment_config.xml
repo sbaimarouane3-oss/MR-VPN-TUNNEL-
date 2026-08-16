@@ -1,72 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/app_bg">
+    android:background="@color/app_bg"
+    android:clipToPadding="false"
+    android:padding="16dp">
 
-    <ScrollView
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:clipToPadding="false"
-        android:padding="16dp"
-        android:paddingBottom="90dp">
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
 
-        <LinearLayout
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="SAVED CONFIGS"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.08"
+            android:layout_marginBottom="12dp" />
+
+        <TextView
+            android:id="@+id/txtConfigEmpty"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical">
+            android:text="No saved configs yet. Use the + button in SSH SETTINGS to create one."
+            android:textColor="@color/text_muted"
+            android:textSize="13sp"
+            android:padding="8dp"
+            android:visibility="gone" />
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="SAVED CONFIGS"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.08"
-                android:layout_marginBottom="12dp" />
+        <LinearLayout
+            android:id="@+id/llConfigList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
 
-            <TextView
-                android:id="@+id/txtConfigEmpty"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="No saved configs yet. Tap + to create one from your current settings."
-                android:textColor="@color/text_muted"
-                android:textSize="13sp"
-                android:padding="8dp"
-                android:visibility="gone" />
-
-            <LinearLayout
-                android:id="@+id/llConfigList"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical" />
-
-        </LinearLayout>
-    </ScrollView>
-
-    <!-- زر "+" الأزرق: كيدير كونفيغ جديد من الحقول الحالية فـ SSH SETTINGS -->
-    <FrameLayout
-        android:id="@+id/btnAddConfig"
-        android:layout_width="58dp"
-        android:layout_height="58dp"
-        android:layout_gravity="bottom|end"
-        android:layout_margin="20dp"
-        android:background="@drawable/shape_fab_blue"
-        android:elevation="6dp"
-        android:clickable="true"
-        android:focusable="true">
-
-        <ImageView
-            android:layout_width="24dp"
-            android:layout_height="24dp"
-            android:layout_gravity="center"
-            android:src="@drawable/ic_add"
-            android:contentDescription="@null"
-            app:tint="#FFFFFF" />
-
-    </FrameLayout>
-
-</FrameLayout>
-
+    </LinearLayout>
+</ScrollView>
