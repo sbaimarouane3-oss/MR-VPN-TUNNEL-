@@ -243,12 +243,10 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
             .setMessage("Delete \"${entry.displayName}\"? This cannot be undone.")
             .setPositiveButton("Delete") { _, _ ->
                 lifecycleScope.launch {
-                    if (activity?.isConfigFileActive(entry.displayName) == true) {
-                        activity.disconnectConfigFile()
-                    }
                     UnlockedConfigCache.remove(entry.displayName)
                     val ok = withContext(Dispatchers.IO) { ConfigStorageManager.delete(ctx, entry) }
                     if (!ok) Toast.makeText(ctx, "Could not delete file.", Toast.LENGTH_SHORT).show()
+                    activity?.handleConfigFileDeleted(entry.displayName)
                     refreshList()
                 }
             }
