@@ -84,19 +84,20 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
             if (isThisOne && (connected || connecting)) {
                 rowCard.setBackgroundResource(R.drawable.shape_card_active)
                 if (connected) {
-                    actionBg.setBackgroundResource(R.drawable.shape_config_action_red)
+                    // 🟢 أخضر = توقف بعد نجاح الاتصال.
+                    actionBg.setBackgroundResource(R.drawable.shape_config_action_green)
                     actionIcon.setImageResource(R.drawable.ic_stop_square)
                 } else {
-                    // Connecting...: نفس شكل STOP لكن كنخليو الأيقونة ديال
-                    // النجمة باش يبان الضغط عليها غادي يلغي المحاولة
-                    // (نفس disconnect() ديال الاتصال العادي).
+                    // 🔴 أحمر = توقف أثناء بدء/محاولة الاتصال (الضغط عليه
+                    // كيلغي المحاولة، نفس disconnect() ديال الاتصال العادي).
                     actionBg.setBackgroundResource(R.drawable.shape_config_action_red)
                     actionIcon.setImageResource(R.drawable.ic_stop_square)
                 }
             } else {
+                // 🔵 أزرق = تشغيل (لا اتصال حالي بهاد الملف).
                 rowCard.setBackgroundResource(R.drawable.shape_card_alt)
-                actionBg.setBackgroundResource(R.drawable.shape_config_action_green)
-                actionIcon.setImageResource(R.drawable.ic_star)
+                actionBg.setBackgroundResource(R.drawable.shape_config_action_blue)
+                actionIcon.setImageResource(R.drawable.ic_play)
             }
         }
     }
@@ -116,7 +117,7 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
 
         val displayName = entry.displayName.removeSuffix(".${MlConfigFile.EXTENSION}")
         txtName.text = displayName
-        txtMeta.text = if (entry.isEncrypted) "\uD83D\uDD12 Password protected" else "Unprotected \u2022 tap for details"
+        txtMeta.text = if (entry.isEncrypted) "Password protected" else "Unprotected \u2022 tap for details"
         imgLock.setImageResource(if (entry.isEncrypted) R.drawable.ic_lock else R.drawable.ic_check_circle)
         imgLock.setColorFilter(
             ContextCompat.getColor(requireContext(), if (entry.isEncrypted) R.color.state_error else R.color.accent_green)
