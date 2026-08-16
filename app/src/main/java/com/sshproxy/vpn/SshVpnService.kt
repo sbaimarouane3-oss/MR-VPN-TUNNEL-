@@ -372,6 +372,10 @@ class SshVpnService : VpnService() {
             return START_NOT_STICKY
         }
 
+        // كيتحسب مرة وحدة هنا (ماشي فكل محاولة داخل connect()) - شوف
+        // التعليق فـ connect() على securityNotice.
+        val securityNotice = SecurityCheck.quickScan()
+
         scope.launch {
             var attempt = 0
             while (isActive) {
@@ -383,10 +387,20 @@ class SshVpnService : VpnService() {
                         stopVpn()
                         return@launch
                     }
-                    connect(host, port, user, pass, proxyHost, proxyPort, payload, usePayload, useSsl, sni, udpgwEnabled, udpgwPort, maskLogs)
+                    connect(host, port, user, pass, proxyHost, proxyPort, payload, usePayload, useSsl, sni, udpgwEnabled, udpgwPort, maskLogs, securityNotice)
                     break // reached "Connection Established" with no issues
                 } catch (e: Throwable) {
                     log(classifyConnectError(e))
+
+                    // Full teardown before any retry: disconnects the failed
+                    // JSch session (belt-and-suspenders on top of the
+                    // explicit disconnect() already done in connect()'s own
+                    // catch), stops the local SOCKS server if it was
+                    // somehow started, and clears every reference so the
+                    // next attempt below starts from a clean slate - no
+                    // previous attempt's Session/socket stays reachable or
+                    // running in the background.
+                    cleanupResources()
 
                     if (stopRequested) {
                         // User tapped Disconnect manually mid-attempt - stop, no retry
@@ -394,18 +408,45 @@ class SshVpnService : VpnService() {
                         return@launch
                     }
 
-                    // Like HTTP Custom: any error during the initial setup
-                    // stage (before the tunnel is up) retries automatically
-                    // from scratch, without killing the app. This is the
-                    // initial setup stage only (SSH+TUN not yet built) - not
-                    // the same path as "smart reconnect" (see smartReconnect),
-                    // which only runs once the tunnel is already up.
-                    cleanupResources()
                     attempt++
-                    // Short retry pause: failed initial attempts should move
-                    // to the next server attempt quickly, without the old
-                    // exponential 0.8/1.6/3.2s delays.
-                    val waitMs = 500L
+
+                    // Same "stop hammering a dead server forever" ceiling
+                    // already used by smartReconnect() for post-connect
+                    // drops (MAX_AUTO_RECONNECT_WINDOW_MS = 1h), now also
+                    // applied to the very first connection attempt. Before
+                    // this fix, an invalid/expired server made this loop
+                    // retry every 500ms forever - each attempt doing a full
+                    // JSch session + crypto handshake - with nothing to ever
+                    // stop it. This is the real fix for the CPU/RAM/battery
+                    // drain: an unbounded loop of real work, not a resource
+                    // leak inside a single attempt.
+                    if (firstReconnectFailureAt == 0L) firstReconnectFailureAt = System.currentTimeMillis()
+                    val elapsedSinceFirstFailure = System.currentTimeMillis() - firstReconnectFailureAt
+                    if (elapsedSinceFirstFailure >= MAX_AUTO_RECONNECT_WINDOW_MS) {
+                        // Unlike smartReconnect's ceiling (where a TUN
+                        // interface is already up and worth keeping alive
+                        // idle), the initial connect never got that far here
+                        // - there is nothing to keep running. Full teardown
+                        // (same stopVpn() path used everywhere else in this
+                        // service) removes the foreground notification and
+                        // ends the process cleanly instead of leaving an
+                        // idle foreground service behind. The UI treats
+                        // STATE_WAITING_USER_ACTION the same as
+                        // STATE_FAILED - button resets, user can tap
+                        // Connect again for a fresh attempt.
+                        log("Waiting User Action...")
+                        autoReconnectSuspended = true
+                        stopVpn(STATE_WAITING_USER_ACTION)
+                        return@launch
+                    }
+
+                    // Exponential backoff + jitter (800ms -> 8s ceiling,
+                    // same helper smartReconnect/Xray already use) instead
+                    // of a fixed 500ms hammer. A truly dead/invalid server
+                    // now backs off instead of retrying at full speed
+                    // forever; a server that's briefly unreachable still
+                    // recovers quickly on the early, short attempts.
+                    val waitMs = backoffDelayMs(attempt - 1)
                     log("Retrying Connection (attempt $attempt) in ${waitMs} ms...")
                     delay(waitMs)
                 }
@@ -419,7 +460,14 @@ class SshVpnService : VpnService() {
         proxyHost: String, proxyPort: Int, payload: String, usePayload: Boolean,
         useSsl: Boolean = false, sni: String = "",
         udpgwEnabled: Boolean = false, udpgwPort: Int = 7300,
-        maskLogs: Boolean = false
+        maskLogs: Boolean = false,
+        // كيتحسب مرة وحدة قبل ما تبدا حلقة الـretry (شوف onStartCommand) -
+        // ماشي فكل محاولة. نتيجة SecurityCheck.quickScan() (root/emulator/
+        // debugger) ماغاديش تتبدل بين محاولة ومحاولة كل بضع مئات ديال الـms،
+        // فإعادة فحص 10 ملفات + Build.FINGERPRINT فكل محاولة (بلا فايدة
+        // حقيقية) هي واحد من الأسباب لي كانت كتخلي سيرفر خاطئ/منتهي يستهلك
+        // CPU بزاف بلا داعي.
+        securityNotice: String? = null
     ) {
         val usesProxy = proxyHost.isNotBlank() && (proxyHost != host || proxyPort != port)
         val protocolLabel = StringBuilder("SSH").apply {
@@ -431,13 +479,21 @@ class SshVpnService : VpnService() {
         log("Resolving Server...")
         val connectTotalStart = SystemClock.elapsedRealtime()
 
-        SecurityCheck.quickScan()?.let { log(it) }
+        securityNotice?.let { log(it) }
         log("Connection Setup Started.")
 
         val jsch = JSch()
         val sessionStart = SystemClock.elapsedRealtime()
         val s = jsch.getSession(user, host, port)
         log("SSH Session Created. (${SystemClock.elapsedRealtime() - sessionStart} ms)")
+        // مهم لتنظيف الموارد: نربطو `session` بالجلسة هنا مباشرة (قبل حتى
+        // s.connect())، ماشي غير بعد النجاح. هكذا، إلا فشلت s.connect() أو
+        // أي خطوة بعدها، cleanupResources() لي كتنادى عليها حلقة الـretry
+        // فـ onStartCommand غادي تلقى `session` غير null وتقدر تدير عليها
+        // disconnect() فعلا (كتسد الـsocket/streams الداخليين ديال JSch) -
+        // قبل هاد التعديل، `session` كان كيتبدل غير بعد النجاح، فأي جلسة
+        // فشلات كانت كتضيع بلا ما cleanupResources() توصل ليها.
+        session = s
         s.setPassword(pass)
         s.setConfig("StrictHostKeyChecking", "no")
         // diffie-hellman-group14-sha1 مزيدة فالأول: هي لي كيفضلها هاد
@@ -465,11 +521,19 @@ class SshVpnService : VpnService() {
             log("SSH Connect Completed. (${SystemClock.elapsedRealtime() - sshStart} ms)")
         } catch (e: Throwable) {
             log("SSH Connect Failed after ${SystemClock.elapsedRealtime() - sshStart} ms")
+            // Defense in depth: JSch's own connect() already closes its
+            // socket/streams internally when it throws, but calling
+            // disconnect() here too is cheap, idempotent, and guarantees
+            // this exact Session object (channels, io) is fully released
+            // even in edge cases JSch's own catch doesn't cover (e.g. an
+            // Error, not an Exception). The outer retry loop's
+            // cleanupResources() will also call session?.disconnect() on
+            // this same object right after - safe to call twice.
+            try { s.disconnect() } catch (_: Throwable) { }
             // The outer retry loop logs the classified error once. Avoid
             // printing the same ERROR twice for every failed attempt.
             throw e
         }
-        session = s
         log("SSH Authentication Successful. (total ${SystemClock.elapsedRealtime() - connectTotalStart} ms)")
 
         socksServer = MiniSocks5Server(s, "127.0.0.1", socksPort) { msg -> log(msg) }
