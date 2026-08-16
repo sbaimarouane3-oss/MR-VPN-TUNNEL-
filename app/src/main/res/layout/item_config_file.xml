@@ -54,14 +54,15 @@
 
         </LinearLayout>
 
-        <!-- STAR (بدء الاتصال بهاد الكونفيغ بلا ما نخرجو من CONFIG tab) -
-             كيتبدل لـ STOP (مربع أحمر) ملي هاد الملف بالضبط هو المتصل حاليا. -->
+        <!-- PLAY (بدء الاتصال بهاد الكونفيغ بلا ما نخرجو من CONFIG tab) -
+             أزرق = تشغيل، أحمر = توقف أثناء المحاولة/الاتصال، أخضر = توقف
+             بعد نجاح الاتصال (شوف updateActiveVisuals فـConfigFragment). -->
         <FrameLayout
             android:id="@+id/btnConfigAction"
             android:layout_width="40dp"
             android:layout_height="40dp"
             android:layout_marginStart="10dp"
-            android:background="@drawable/shape_config_action_green"
+            android:background="@drawable/shape_config_action_blue"
             android:clickable="true"
             android:focusable="true">
 
@@ -70,7 +71,7 @@
                 android:layout_width="18dp"
                 android:layout_height="18dp"
                 android:layout_gravity="center"
-                android:src="@drawable/ic_star"
+                android:src="@drawable/ic_play"
                 android:contentDescription="@null" />
 
         </FrameLayout>
@@ -112,7 +113,9 @@
                 android:layout_weight="1"
                 android:text="EDIT"
                 android:textColor="@color/text_primary"
-                android:textSize="12sp" />
+                android:textSize="12sp"
+                android:drawableTop="@drawable/ic_edit"
+                android:drawableTint="@color/text_primary" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnConfigShare"
@@ -122,7 +125,9 @@
                 android:layout_weight="1"
                 android:text="SHARE"
                 android:textColor="@color/text_primary"
-                android:textSize="12sp" />
+                android:textSize="12sp"
+                android:drawableTop="@drawable/ic_share"
+                android:drawableTint="@color/text_primary" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnConfigDelete"
@@ -132,7 +137,9 @@
                 android:layout_weight="1"
                 android:text="DELETE"
                 android:textColor="@color/state_error"
-                android:textSize="12sp" />
+                android:textSize="12sp"
+                android:drawableTop="@drawable/ic_delete"
+                android:drawableTint="@color/state_error" />
 
         </LinearLayout>
 
