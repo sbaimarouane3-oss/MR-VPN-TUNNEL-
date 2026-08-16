@@ -49,8 +49,6 @@ class SshFragment : Fragment(R.layout.fragment_ssh) {
     lateinit var btnRemoveImported: Button
     lateinit var importedStatusContainer: LinearLayout
     lateinit var txtImportedStatus: TextView
-    lateinit var savedConfigStatusContainer: LinearLayout
-    lateinit var txtSavedConfigInfo: TextView
     lateinit var btnNewConfig: Button
 
     // Views ديال التصميم الجديد فقط (عرض/status) — بلا أي منطق اتصال،
@@ -62,6 +60,9 @@ class SshFragment : Fragment(R.layout.fragment_ssh) {
     lateinit var rowProtocol: View
     lateinit var txtPortValue: TextView
     lateinit var txtStatusCardValue: TextView
+    lateinit var dividerFile: View
+    lateinit var rowFile: View
+    lateinit var txtFileValue: TextView
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -95,8 +96,6 @@ class SshFragment : Fragment(R.layout.fragment_ssh) {
         btnRemoveImported = view.findViewById(R.id.btnRemoveImported)
         importedStatusContainer = view.findViewById(R.id.importedStatusContainer)
         txtImportedStatus = view.findViewById(R.id.txtImportedStatus)
-        savedConfigStatusContainer = view.findViewById(R.id.savedConfigStatusContainer)
-        txtSavedConfigInfo = view.findViewById(R.id.txtSavedConfigInfo)
         btnNewConfig = view.findViewById(R.id.btnNewConfig)
 
         viewConnectPulseRing = view.findViewById(R.id.viewConnectPulseRing)
@@ -105,6 +104,9 @@ class SshFragment : Fragment(R.layout.fragment_ssh) {
         rowProtocol = view.findViewById(R.id.rowProtocol)
         txtPortValue = view.findViewById(R.id.txtPortValue)
         txtStatusCardValue = view.findViewById(R.id.txtStatusCardValue)
+        dividerFile = view.findViewById(R.id.dividerFile)
+        rowFile = view.findViewById(R.id.rowFile)
+        txtFileValue = view.findViewById(R.id.txtFileValue)
 
         (requireActivity() as? MainActivity)?.onSshFragmentReady(this)
     }
