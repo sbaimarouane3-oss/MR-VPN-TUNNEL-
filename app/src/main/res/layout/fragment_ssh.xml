@@ -698,6 +698,39 @@
                 app:rippleColor="#22FF5459" />
         </LinearLayout>
 
+        <!-- حالة Saved Config (شغال من CONFIG tab) - مسار منفصل تماما عن
+             importedStatusContainer فوق: بلا "Config imported"، بلا زر
+             REMOVE. غير معلومات الملف (File/Protocol/Server/Port) -
+             Status كاين ديجا فكارد Connection Details فوق. -->
+        <LinearLayout
+            android:id="@+id/savedConfigStatusContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/shape_card_alt"
+            android:padding="16dp"
+            android:layout_marginTop="16dp"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="USING SAVED CONFIG"
+                android:textColor="@color/text_secondary"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.06" />
+
+            <TextView
+                android:id="@+id/txtSavedConfigInfo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:textColor="@color/text_primary"
+                android:textSize="13sp"
+                android:text="" />
+        </LinearLayout>
+
         <!-- زر إنشاء كونفيغ .ml جديد - تحول من CONFIG tab لهنا، كيفتح نفس
              ديالوغ الإنشاء (اسم -> كلمة سر اختيارية) اللي فـConfigFragment. -->
         <com.google.android.material.button.MaterialButton
