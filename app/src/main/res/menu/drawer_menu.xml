@@ -11,6 +11,20 @@
         android:icon="@drawable/ic_wifi_share"
         android:title="Share Proxy" />
 
+    <!-- جديد: كيمسح كل حاجة محفوظة (Saved Config, Import Code, حقول يدوية,
+         Share Proxy settings...) ويرجع التطبيق لحالة أول تشغيل. مربوط فـ
+         MainActivity عبر R.id.nav_clear -> confirmClearAllData(). -->
+    <item
+        android:id="@+id/nav_clear"
+        android:icon="@android:drawable/ic_menu_delete"
+        android:title="Clear" />
+
+    <item
+        android:id="@+id/nav_sharelog"
+        android:icon="@drawable/ic_share"
+        android:title="Share Log" />
+
+    <!-- Telegram/WhatsApp تحت فالأسفل بطلب المستخدم -->
     <item
         android:id="@+id/nav_telegram"
         android:icon="@drawable/ic_telegram"
@@ -20,10 +34,5 @@
         android:id="@+id/nav_whatsapp"
         android:icon="@drawable/ic_whatsapp"
         android:title="WhatsApp" />
-
-    <item
-        android:id="@+id/nav_sharelog"
-        android:icon="@drawable/ic_share"
-        android:title="Share Log" />
 
 </menu>
