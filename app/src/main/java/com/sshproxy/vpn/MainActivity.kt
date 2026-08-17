@@ -310,6 +310,11 @@ class MainActivity : AppCompatActivity() {
             if (savedFileName != null) {
                 activeConfigFileName = savedFileName
                 configSource = ConfigSource.SAVED_CONFIG
+            } else if (connectionStatePrefs().getBoolean(KEY_LAST_CONFIG_WAS_IMPORTED, false)) {
+                // نفس المبدأ لـImported Config: كونفيغ محمل + العلامة
+                // محفوظة = كان جاي من Import Code - رجّع Config imported ✓
+                // + REMOVE IMPORTED CONFIG بدل ما يهبط لـ+ NEW CONFIG.
+                configSource = ConfigSource.IMPORTED
             }
         }
 
@@ -906,6 +911,7 @@ class MainActivity : AppCompatActivity() {
         clearActiveImportedConfigSilently()
         activeConfigFileName = null
         persistLastSavedConfigFileName(null)
+        persistImportedConfigActive(false)
         configFragment?.updateActiveVisuals(null, false, false)
         editingConfigOriginalName = originalName
         applyFieldsToManualPrefs(fields)
@@ -938,6 +944,7 @@ class MainActivity : AppCompatActivity() {
         configSource = ConfigSource.SAVED_CONFIG
         activeConfigFileName = displayName
         persistLastSavedConfigFileName(displayName)
+        persistImportedConfigActive(false)
         updateImportUiState()
         try {
             if (!connected && !connecting) tryConnect()
@@ -971,6 +978,7 @@ class MainActivity : AppCompatActivity() {
         activeXrayConfig = null
         activeConfigFileName = null
         persistLastSavedConfigFileName(null)
+        persistImportedConfigActive(false)
         configSource = ConfigSource.NONE
         updateImportUiState()
         configFragment?.updateActiveVisuals(null, false, false)
@@ -1105,6 +1113,17 @@ class MainActivity : AppCompatActivity() {
     private fun persistLastSavedConfigFileName(name: String?) {
         val editor = connectionStatePrefs().edit()
         if (name == null) editor.remove(KEY_LAST_SAVED_CONFIG_FILE) else editor.putString(KEY_LAST_SAVED_CONFIG_FILE, name)
+        editor.apply()
+    }
+
+    // نفس المبدأ ديال persistLastSavedConfigFileName لكن لـImported Config:
+    // كنسجلو غير "كان هذا الكونفيغ جاي من Import Code" (بلا اسم ملف - ماشي
+    // Saved Config). كيتقرا فـonCreate باش يرجع configSource = IMPORTED
+    // (Config imported ✓ + REMOVE IMPORTED CONFIG) بدل ما يهبط لـNONE
+    // (+ NEW CONFIG) بعد إعادة فتح التطبيق.
+    private fun persistImportedConfigActive(active: Boolean) {
+        val editor = connectionStatePrefs().edit()
+        if (active) editor.putBoolean(KEY_LAST_CONFIG_WAS_IMPORTED, true) else editor.remove(KEY_LAST_CONFIG_WAS_IMPORTED)
         editor.apply()
     }
 
@@ -1249,6 +1268,7 @@ class MainActivity : AppCompatActivity() {
         configSource = ConfigSource.NONE
         activeConfigFileName = null
         persistLastSavedConfigFileName(null)
+        persistImportedConfigActive(false)
         editingConfigOriginalName = null
         configFragment?.updateActiveVisuals(null, connected, connecting)
         val f = sshFragment
@@ -1386,6 +1406,7 @@ class MainActivity : AppCompatActivity() {
         // القاعدة "config واحد" ديال SecureConfigStore القديمة).
         configSource = ConfigSource.IMPORTED
         persistLastSavedConfigFileName(null)
+        persistImportedConfigActive(true)
         SecureConfigStore.clear(applicationContext)
         activeImportedConfig = null
 
@@ -1399,6 +1420,7 @@ class MainActivity : AppCompatActivity() {
     private fun saveImportedConfig(cfg: ImportedConfig) {
         configSource = ConfigSource.IMPORTED
         persistLastSavedConfigFileName(null)
+        persistImportedConfigActive(true)
         XraySecureConfigStore.clear(applicationContext)
         activeXrayConfig = null
 
@@ -1421,6 +1443,7 @@ class MainActivity : AppCompatActivity() {
                 configSource = ConfigSource.NONE
                 activeConfigFileName = null
                 persistLastSavedConfigFileName(null)
+                persistImportedConfigActive(false)
                 editingConfigOriginalName = null
                 configFragment?.updateActiveVisuals(null, connected, connecting)
                 updateImportUiState()
@@ -2145,5 +2168,6 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val EXTRA_RELAUNCHED = "com.sshproxy.vpn.EXTRA_RELAUNCHED"
         private const val KEY_LAST_SAVED_CONFIG_FILE = "lastLoadedConfigFileName"
+        private const val KEY_LAST_CONFIG_WAS_IMPORTED = "lastConfigWasImported"
     }
 }
