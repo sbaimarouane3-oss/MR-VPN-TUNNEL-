@@ -370,6 +370,7 @@ class MainActivity : AppCompatActivity() {
             when (item.itemId) {
                 R.id.nav_add -> showImportDialog()
                 R.id.nav_share_proxy -> showProxyShareDialog()
+                R.id.nav_clear -> confirmClearAllData()
                 R.id.nav_telegram -> openUrl(LinksManager.getCached(applicationContext).telegramUrl)
                 R.id.nav_whatsapp -> openUrl(LinksManager.getCached(applicationContext).whatsappUrl)
                 R.id.nav_sharelog -> shareLog()
@@ -437,6 +438,66 @@ class MainActivity : AppCompatActivity() {
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    /**
+     * "Clear" فالقائمة الجانبية (تحت Share Proxy) - كيمسح كل حاجة محفوظة
+     * فالتطبيق ويرجعو لحالة أول تشغيل. Delete/Cancel، بلا رجعة (irreversible).
+     */
+    private fun confirmClearAllData() {
+        AlertDialog.Builder(this)
+            .setTitle("Clear All Data")
+            .setMessage("This will permanently delete all saved configs, imported config, manual fields, and share-proxy settings, and disconnect if connected. This cannot be undone.")
+            .setPositiveButton("Delete") { _, _ -> clearAllAppDataAndResetToFirstLaunch() }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun clearAllAppDataAndResetToFirstLaunch() {
+        // 1) قطع الاتصال إلا كان خدام أو فطور الاتصال.
+        if (connected || connecting) disconnect()
+
+        // 2) الكونفيغ "المخفي" النشط (Saved Config أو Import Code) - نفس
+        // التخزين لي كيستعملو activeImportedConfig/activeXrayConfig.
+        SecureConfigStore.clear(applicationContext)
+        XraySecureConfigStore.clear(applicationContext)
+        activeImportedConfig = null
+        activeXrayConfig = null
+
+        // 3) هوية الملف/المصدر (Saved Config identity + persistence ديالها).
+        activeConfigFileName = null
+        editingConfigOriginalName = null
+        configSource = ConfigSource.NONE
+        persistLastSavedConfigFileName(null)
+        persistImportedConfigActive(false)
+
+        // 4) الحقول اليدوية (SSH/V2Ray/Shadowsocks) + Share Proxy settings.
+        manualFieldsPrefs().edit().clear().apply()
+        connectionStatePrefs().edit().clear().apply()
+        getSharedPreferences("proxy_share_prefs", MODE_PRIVATE).edit().clear().apply()
+
+        // 5) واجهة فورية (بلا ما نستنى الحذف ديال الملفات، لي كيدير IO):
+        // الحقول ترجع افتراضية، الكارد ديال Saved Config/Imported يختفي.
+        restoreManualFields()
+        updateImportUiState()
+        configFragment?.updateActiveVisuals(null, false, false)
+        applyConnectButtonState()
+
+        // 6) مسح كل ملفات Saved Config (.ml) فـDownloads/MR VPN TUNNEL -
+        // list()/delete() كيديرو MediaStore/File IO، خاصهم Dispatchers.IO
+        // (نفس القاعدة ديال saveNewConfig فوق). configFragment?.refreshList()
+        // هنا كيرجع يقرا اللائحة (خاوية دابا) من نفس المصدر.
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                val entries = ConfigStorageManager.list(applicationContext)
+                entries.forEach { entry ->
+                    ConfigStorageManager.delete(applicationContext, entry)
+                    UnlockedConfigCache.remove(entry.displayName)
+                }
+            }
+            configFragment?.refreshList()
+            Toast.makeText(this@MainActivity, "All data cleared", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun openUrl(url: String) {
