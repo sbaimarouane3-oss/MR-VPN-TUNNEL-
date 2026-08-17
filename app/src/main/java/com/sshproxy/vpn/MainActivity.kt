@@ -300,6 +300,18 @@ class MainActivity : AppCompatActivity() {
 
         activeImportedConfig = SecureConfigStore.load(applicationContext)
         activeXrayConfig = XraySecureConfigStore.load(applicationContext)
+        // إعادة استرجاع هوية Saved Config (اسم الملف) بعد إعادة فتح
+        // التطبيق - غير إلا كان فعلا كاين كونفيغ محمل (Import Code كيستعمل
+        // نفس التخزين لكن كيمسح هاد المفتاح عند الحفظ - شوف saveXrayConfig/
+        // saveImportedConfig)، باش مانرجعوش اسم ملف قديم فوق كونفيغ Import
+        // Code جديد.
+        if (activeImportedConfig != null || activeXrayConfig != null) {
+            val savedFileName = connectionStatePrefs().getString(KEY_LAST_SAVED_CONFIG_FILE, null)
+            if (savedFileName != null) {
+                activeConfigFileName = savedFileName
+                configSource = ConfigSource.SAVED_CONFIG
+            }
+        }
 
         setupDrawer()
 
@@ -893,6 +905,7 @@ class MainActivity : AppCompatActivity() {
     fun loadFieldsForEditing(originalName: String, fields: Map<String, Any?>) {
         clearActiveImportedConfigSilently()
         activeConfigFileName = null
+        persistLastSavedConfigFileName(null)
         configFragment?.updateActiveVisuals(null, false, false)
         editingConfigOriginalName = originalName
         applyFieldsToManualPrefs(fields)
@@ -924,6 +937,7 @@ class MainActivity : AppCompatActivity() {
 
         configSource = ConfigSource.SAVED_CONFIG
         activeConfigFileName = displayName
+        persistLastSavedConfigFileName(displayName)
         updateImportUiState()
         try {
             if (!connected && !connecting) tryConnect()
@@ -956,6 +970,7 @@ class MainActivity : AppCompatActivity() {
         activeImportedConfig = null
         activeXrayConfig = null
         activeConfigFileName = null
+        persistLastSavedConfigFileName(null)
         configSource = ConfigSource.NONE
         updateImportUiState()
         configFragment?.updateActiveVisuals(null, false, false)
@@ -1079,6 +1094,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun manualFieldsPrefs() = getSharedPreferences("manual_fields", Context.MODE_PRIVATE)
+
+    // تخزين دائم لهوية Saved Config النشط (اسم الملف فقط) - مستقل عن
+    // activeConfigFileName الحالي فالذاكرة، لي كان كيتصفى عند disconnect()
+    // القديم ولا عند إعادة تشغيل التطبيق. هادشي كيسمح لينا نفرقو بين
+    // "هوية الملف" (دائمة) و"حالة الاتصال" (مؤقتة)، ونرجعو الهوية بعد
+    // إعادة فتح التطبيق فـonCreate.
+    private fun connectionStatePrefs() = getSharedPreferences("connection_state", Context.MODE_PRIVATE)
+
+    private fun persistLastSavedConfigFileName(name: String?) {
+        val editor = connectionStatePrefs().edit()
+        if (name == null) editor.remove(KEY_LAST_SAVED_CONFIG_FILE) else editor.putString(KEY_LAST_SAVED_CONFIG_FILE, name)
+        editor.apply()
+    }
 
     private fun restoreManualFields() {
         val f = sshFragment ?: return
@@ -1220,6 +1248,7 @@ class MainActivity : AppCompatActivity() {
         }
         configSource = ConfigSource.NONE
         activeConfigFileName = null
+        persistLastSavedConfigFileName(null)
         editingConfigOriginalName = null
         configFragment?.updateActiveVisuals(null, connected, connecting)
         val f = sshFragment
@@ -1356,6 +1385,7 @@ class MainActivity : AppCompatActivity() {
         // كونفيغ واحد فقط مسموح - إلا كان SSH config محفوظ نمحيوه (نفس
         // القاعدة "config واحد" ديال SecureConfigStore القديمة).
         configSource = ConfigSource.IMPORTED
+        persistLastSavedConfigFileName(null)
         SecureConfigStore.clear(applicationContext)
         activeImportedConfig = null
 
@@ -1368,6 +1398,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun saveImportedConfig(cfg: ImportedConfig) {
         configSource = ConfigSource.IMPORTED
+        persistLastSavedConfigFileName(null)
         XraySecureConfigStore.clear(applicationContext)
         activeXrayConfig = null
 
@@ -1389,6 +1420,7 @@ class MainActivity : AppCompatActivity() {
                 activeXrayConfig = null
                 configSource = ConfigSource.NONE
                 activeConfigFileName = null
+                persistLastSavedConfigFileName(null)
                 editingConfigOriginalName = null
                 configFragment?.updateActiveVisuals(null, connected, connecting)
                 updateImportUiState()
@@ -2003,8 +2035,12 @@ class MainActivity : AppCompatActivity() {
             connected = false
             connecting = false
             reconnectingUi = false
-            activeConfigFileName = null
-            configFragment?.updateActiveVisuals(null, false, false)
+            // ملاحظة: activeConfigFileName ماكيتمسحش هنا من بعد - كان
+            // هادشي هو السبب الرئيسي فاختفاء اسم الملف بعد STOP رغم أن
+            // نفس Saved Config بقات هي المستعملة. الهوية (اسم الملف) خاصها
+            // تبقى، غير حالة الاتصال (connected/connecting) هي لي كتبدل.
+            // applyConnectButtonState() تحت غادي يزامن CONFIG tab
+            // بـactiveConfigFileName الحالي (ماشي null).
             applyConnectButtonState()
             // "Disconnected." كيجي من SshVpnService.stopVpn() فقط - ماشي من
             // هنا. كان هادي بالضبط سبب "Disconnected." مرتين فـ Connection
@@ -2108,5 +2144,6 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val EXTRA_RELAUNCHED = "com.sshproxy.vpn.EXTRA_RELAUNCHED"
+        private const val KEY_LAST_SAVED_CONFIG_FILE = "lastLoadedConfigFileName"
     }
 }
