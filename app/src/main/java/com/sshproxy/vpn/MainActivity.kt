@@ -1531,7 +1531,10 @@ class MainActivity : AppCompatActivity() {
                 f.importedStatusContainer.visibility = View.VISIBLE
                 f.txtImportedStatus.text = xray?.summary() ?: ssh?.maskedSummary() ?: ""
                 f.manualFieldsContainer.visibility = View.GONE
-                f.btnNewConfig.visibility = View.VISIBLE
+                // + NEW CONFIG كيخبى ما دام Imported Config هو المستعمل
+                // حاليا - نفس المنطق ديال SAVED_CONFIG تحت. الطريق باش
+                // يخرج منها هو REMOVE IMPORTED CONFIG، ماشي + NEW CONFIG.
+                f.btnNewConfig.visibility = View.GONE
             }
             ConfigSource.SAVED_CONFIG -> {
                 // بلا بطاقة "USING SAVED CONFIG" منفصلة - اسم الملف كيبان
