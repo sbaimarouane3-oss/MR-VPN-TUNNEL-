@@ -820,7 +820,13 @@ class SshVpnService : VpnService() {
             // itself decides to restart it.
             log("ERROR: Server Unreachable.")
             broadcastStatus(STATE_RECONNECTING)
-            log("Reconnecting...")
+            // ملاحظة: log("Reconnecting...") اتشال من هنا - كان كيتكرر
+            // مرتين حدة حدة فالـLog. scheduleSmartReconnect(debounceMs=0)
+            // تحت كينادي مباشرة smartReconnect() -> smartReconnectXray()،
+            // ولي هي بحالها كتبدا بـ log("Reconnecting...") (شوف تحت) -
+            // فهاد السطر هنا كان زايد، نفس الرسالة كتتكتب مرتين لنفس
+            // الحدث. broadcastStatus(STATE_RECONNECTING) خليناها كيفما
+            // هي باش الواجهة تتبدل فورا بلا ما تستنى.
             scheduleSmartReconnect("initial-server-unreachable", debounceMs = 0)
             return
         }
