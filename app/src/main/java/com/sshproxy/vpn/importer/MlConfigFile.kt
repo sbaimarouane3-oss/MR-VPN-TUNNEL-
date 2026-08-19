@@ -1,8 +1,16 @@
 package com.sshproxy.vpn.importer
 
+import android.content.Context
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import android.util.Base64
 import org.json.JSONObject
+import java.security.KeyStore
 import java.security.MessageDigest
 import java.security.SecureRandom
+import java.security.KeyPairGenerator
+import java.security.Signature
+import java.security.spec.X509EncodedKeySpec
 import javax.crypto.Cipher
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
@@ -16,108 +24,145 @@ class MlConfigParseException(message: String) : Exception(message)
 class MlConfigWeakPasswordException(message: String) : Exception(message)
 
 /**
- * تنسيق ملف .ml (كونفيغ قابل للمشاركة/الحفظ فـ Downloads):
- *
- *  بلا كلمة سر ديال المستخدم (FLAG_PLAIN):
- *   [0..3]  magic "MVCP"
- *   [4]     format version = 0x01
- *   [5]     flag = 0x00
- *   [6..17] IV ديال AES-GCM (12 بايت)
- *   [18..]  ciphertext (AES-256-GCM بمفتاح ثابت مدمج فالتطبيق - staticKey())
- *
- *   ملاحظة: "Unprotected" فالواجهة كيعني بلا طلب password من المستخدم
- *   جوا التطبيق - ماشي بلا تشفير خالص. المفتاح ثابت (نفسو لكل نسخة من
- *   التطبيق)، فالهدف هو منع الملف من كونو قابل للقراءة مباشرة فـFile
- *   Manager/محرر نصوص عادي (Server/UUID/Domain الحقيقيين)، ماشي حماية
- *   من reverse-engineering ديال التطبيق نفسو. الفك كيوقع بصمت جوا
- *   التطبيق بلا ما يطلب من المستخدم أي حاجة.
- *
- *  بكلمة سر ديال المستخدم (FLAG_ENCRYPTED):
- *   [0..3]  magic "MVCP"
- *   [4]     format version = 0x01
- *   [5]     flag = 0x01
- *   [6..21] salt (16 بايت، عشوائي)
- *   [22..33] IV ديال AES-GCM (12 بايت)
- *   [34..]  ciphertext (AES-256-GCM، GCM tag مزاد فالآخر تلقائيا)
- *
- * المفتاح فحالة التشفير بـpassword: PBKDF2WithHmacSHA256(password, salt,
- * 600000 iterations, 256-bit) - توصية OWASP 2023 لـPBKDF2-SHA256 (كانت
- * 210000 قبل هاد التعديل - شوف PBKDF2_ITERATIONS_LEGACY تحت للتوافق مع
- * الملفات المحمية القديمة). أقوى من مفتاح ثابت لأنه مربوط بكلمة السر
- * ديال المستخدم، وماشي مربوط بالجهاز (بخلاف SecureConfigStore) حيت
- * الملف خاصو يتفتح من جهاز آخر. الحد الأدنى لطول الـpassword (8 أحرف)
- * مفروض عند build() - أقوى تشفير مايفيدش حتى password ضعيفة يقدر
- * يتخمن بسرعة.
- *
- * توافق مع الملفات القديمة (بلا password، FLAG_PLAIN): قبل هاد التعديل،
- * FLAG_PLAIN كانت كتكتب JSON خام بلا أي تشفير (header + plaintext
- * مباشرة، بلا IV). parse() تحت كتجرب أولا الفك بـstaticKey() (الفورمات
- * الجديد)، وإلا فشل (طول الملف قصير بزاف، أو فشل AES-GCM tag) كترجع
- * للفورمات القديم (JSON خام) باش الملفات المحفوظة قبل هاد التعديل يبقاو
- * خدامين.
- *
- * توافق مع الملفات المحمية القديمة (بـpassword، FLAG_ENCRYPTED): الملفات
- * المتصاوبة قبل رفع الـiterations كانت مبنية بـ210000 - عدد الـ
- * iterations ماشي مخزن جوا الملف نفسو، فparse() كتجرب PBKDF2_ITERATIONS
- * الجديد (600000) أولا، وإلا فشل الفك (AES-GCM tag) كتعاود بـ
- * PBKDF2_ITERATIONS_LEGACY (210000) قبل ما تقول "password غالطة".
+ * تنسيق .ml مع ملكية مرتبطة بالجهاز:
+ * - الإصدار 2: المحتوى مشفر كما قبل، وفوق ذلك كيتوقع بواسطة Private Key
+ *   الموجود في Android Keystore. الـPrivate Key ما كيدخلش للملف نهائيا.
+ * - الإصدار 1: ملفات قديمة تبقى قابلة للقراءة للتوافق، ولكن ما كتعتبرش
+ *   Owner Config وبالتالي ما عندهاش صلاحية Edit على النظام الجديد.
  */
 internal object MlConfigFile {
 
     private val MAGIC = byteArrayOf('M'.code.toByte(), 'V'.code.toByte(), 'C'.code.toByte(), 'P'.code.toByte())
-    private const val FORMAT_VERSION: Byte = 0x01
+    private const val FORMAT_VERSION_LEGACY: Byte = 0x01
+    private const val FORMAT_VERSION: Byte = 0x02
     private const val FLAG_PLAIN: Byte = 0x00
     private const val FLAG_ENCRYPTED: Byte = 0x01
     private const val PBKDF2_ITERATIONS = 600_000
     private const val PBKDF2_ITERATIONS_LEGACY = 210_000
-    // الحد الأدنى لطول password عند إنشاء كونفيغ محمي - بلا هادشي، AES-256
-    // مايفيدش حتى password قصيرة/سهلة التخمين (بحال "1234").
     const val MIN_PASSWORD_LENGTH = 8
     private const val SALT_LEN = 16
     private const val GCM_IV_LEN = 12
     private const val GCM_TAG_BITS = 128
     private const val HEADER_LEN = 6
+    private const val KEY_ALIAS = "mr_vpn_tunnel_ml_owner_v1"
+    private const val SIG_ALGORITHM = "SHA256withECDSA"
+    private const val EC_CURVE = "secp256r1"
 
     const val EXTENSION = "ml"
 
-    // مفتاح ثابت مدمج فالتطبيق - كيتحسب من SHA-256 ديال جملة ثابتة (ماشي
-    // مخزن كـbytes خام مباشرة، بلا فايدة أمنية حقيقية زايدة، غير باش
-    // ماشي أول حاجة بانة فـstrings ديال الـAPK). Static فكل نسخة من
-    // التطبيق - أي ملف "Unprotected" مبني من أي جهاز يتفك من أي جهاز
-    // آخر فيه نفس التطبيق، بلا ما يحتاج password.
     private val STATIC_KEY_PASSPHRASE = "MRVPNTUNNEL_UNPROTECTED_CONFIG_STATIC_KEY_V1"
+
+    data class Parsed(
+        val name: String,
+        val serverMessage: String,
+        val fields: Map<String, Any?>,
+        /** true فقط إذا كان الملف من فورمات الملكية الجديد وفيه توقيع صالح. */
+        val isSigned: Boolean = false,
+        /** بصرف النظر عن الجهاز: true إذا كان توقيع الملف صالحاً. */
+        val signatureValid: Boolean = false,
+        /** true فقط إذا كان Public Key ديال الملف مطابق للمفتاح المحلي في Keystore. */
+        val ownerPublicKey: String? = null
+    )
 
     private fun staticKey(): SecretKeySpec {
         val digest = MessageDigest.getInstance("SHA-256").digest(STATIC_KEY_PASSPHRASE.toByteArray(Charsets.UTF_8))
         return SecretKeySpec(digest, "AES")
     }
 
-    data class Parsed(val name: String, val serverMessage: String, val fields: Map<String, Any?>)
+    /**
+     * كينشئ/يضمن مفتاح الملكية داخل Android Keystore. المفتاح الخاص
+     * non-exportable وكيستعمل غير للتوقيع.
+     */
+    private fun ensureOwnerKeyPair(context: Context): KeyStore {
+        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        if (!keyStore.containsAlias(KEY_ALIAS)) {
+            val generator = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC, "AndroidKeyStore")
+            val spec = KeyGenParameterSpec.Builder(
+                KEY_ALIAS,
+                KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY
+            )
+                .setAlgorithmParameterSpec(java.security.spec.ECGenParameterSpec(EC_CURVE))
+                .setDigests(KeyProperties.DIGEST_SHA256)
+                .setUserAuthenticationRequired(false)
+                .build()
+            generator.initialize(spec)
+            generator.generateKeyPair()
+        }
+        return keyStore
+    }
+
+    private fun localPublicKeyBase64(context: Context): String {
+        val ks = ensureOwnerKeyPair(context)
+        val cert = ks.getCertificate(KEY_ALIAS) ?: throw IllegalStateException("owner key unavailable")
+        return Base64.encodeToString(cert.publicKey.encoded, Base64.NO_WRAP)
+    }
+
+    private fun sign(context: Context, data: ByteArray): String {
+        val ks = ensureOwnerKeyPair(context)
+        val privateKey = ks.getKey(KEY_ALIAS, null) as? java.security.PrivateKey
+            ?: throw IllegalStateException("owner private key unavailable")
+        val signature = Signature.getInstance(SIG_ALGORITHM)
+        signature.initSign(privateKey)
+        signature.update(data)
+        return Base64.encodeToString(signature.sign(), Base64.NO_WRAP)
+    }
+
+    private fun verifySignature(publicKeyBase64: String, signatureBase64: String, data: ByteArray): Boolean {
+        return try {
+            val publicKeyBytes = Base64.decode(publicKeyBase64, Base64.DEFAULT)
+            val signatureBytes = Base64.decode(signatureBase64, Base64.DEFAULT)
+            val keyFactory = java.security.KeyFactory.getInstance("EC")
+            val publicKey = keyFactory.generatePublic(X509EncodedKeySpec(publicKeyBytes))
+            val verifier = Signature.getInstance(SIG_ALGORITHM)
+            verifier.initVerify(publicKey)
+            verifier.update(data)
+            verifier.verify(signatureBytes)
+        } catch (_: Throwable) {
+            false
+        }
+    }
 
     /**
-     * كيبني bytes ديال الملف. password فارغة/null = بلا password ديال
-     * المستخدم (مشفرة بمفتاح ثابت، بلا طلب password جوا التطبيق).
-     * إلا كانت password غير فارغة لكن أقصر من MIN_PASSWORD_LENGTH،
-     * كيطلع MlConfigWeakPasswordException - أقوى تشفير (AES-256) ماخصوش
-     * يبني على password ضعيفة سهلة التخمين.
+     * true = هذا الجهاز هو Owner الحقيقي للملف.
+     * لا نعتمد على Android ID/IMEI/MAC؛ المقارنة مبنية على Public Key المقابل
+     * لـPrivate Key الموجود في Android Keystore.
      */
-    fun build(name: String, serverMessage: String, fields: Map<String, Any?>, password: String?): ByteArray {
+    fun isOwner(context: Context, parsed: Parsed): Boolean {
+        if (!parsed.isSigned || !parsed.signatureValid || parsed.ownerPublicKey.isNullOrBlank()) return false
+        return try {
+            MessageDigest.isEqual(
+                Base64.decode(parsed.ownerPublicKey, Base64.DEFAULT),
+                Base64.decode(localPublicKeyBase64(context), Base64.DEFAULT)
+            )
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * يبني ملف .ml جديد وموقع بملكية الجهاز الحالي.
+     */
+    fun build(context: Context, name: String, serverMessage: String, fields: Map<String, Any?>, password: String?): ByteArray {
         if (!password.isNullOrEmpty() && password.length < MIN_PASSWORD_LENGTH) {
             throw MlConfigWeakPasswordException("password must be at least $MIN_PASSWORD_LENGTH characters")
         }
-        val payload = JSONObject()
-        payload.put("name", name)
-        payload.put("msg", serverMessage)
-        payload.put("t", System.currentTimeMillis())
+
+        val data = JSONObject()
+        data.put("name", name)
+        data.put("msg", serverMessage)
+        data.put("t", System.currentTimeMillis())
         val fieldsJson = JSONObject()
         for ((k, v) in fields) {
-            when (v) {
-                null -> {}
-                else -> fieldsJson.put(k, v)
-            }
+            if (v != null) fieldsJson.put(k, v)
         }
-        payload.put("fields", fieldsJson)
-        val plaintext = payload.toString().toByteArray(Charsets.UTF_8)
+        data.put("fields", fieldsJson)
+
+        val signedData = data.toString().toByteArray(Charsets.UTF_8)
+        val wrapper = JSONObject()
+            .put("data", data.toString())
+            .put("ownerPublicKey", localPublicKeyBase64(context))
+            .put("signature", sign(context, signedData))
+        val plaintext = wrapper.toString().toByteArray(Charsets.UTF_8)
 
         val header = ByteArray(HEADER_LEN)
         System.arraycopy(MAGIC, 0, header, 0, 4)
@@ -135,7 +180,7 @@ internal object MlConfigFile {
             val salt = ByteArray(SALT_LEN).also { SecureRandom().nextBytes(it) }
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.ENCRYPT_MODE, deriveKey(password, salt))
-            val iv = cipher.iv // 12 بايت، مولّدة عشوائيا
+            val iv = cipher.iv
             val ciphertext = cipher.doFinal(plaintext)
             header + salt + iv + ciphertext
         }
@@ -157,82 +202,125 @@ internal object MlConfigFile {
             val salt = bytes.copyOfRange(HEADER_LEN, HEADER_LEN + SALT_LEN)
             val iv = bytes.copyOfRange(HEADER_LEN + SALT_LEN, HEADER_LEN + SALT_LEN + GCM_IV_LEN)
             val ciphertext = bytes.copyOfRange(HEADER_LEN + SALT_LEN + GCM_IV_LEN, bytes.size)
-            // كنجربو عدد iterations الجديد (600000) أولا - كل الملفات
-            // المتصاوبة من دابا مبنية بيه. إلا فشل (ملف قديم مبني بـ210000
-            // قبل هاد التعديل)، كنعاودو بالرقم القديم قبل ما نقولو
-            // "password غالطة" - عدد الـiterations ماشي مخزن جوا الملف
-            // نفسو، فماكاين حتى طريقة نعرفو أي واحد فيهم غير بالتجربة.
             try {
                 decryptWithIterations(ciphertext, password, salt, iv, PBKDF2_ITERATIONS)
             } catch (_: Throwable) {
                 try {
                     decryptWithIterations(ciphertext, password, salt, iv, PBKDF2_ITERATIONS_LEGACY)
                 } catch (_: Throwable) {
-                    // كلمة سر غالطة أو ملف متلاعب بيه - نفس الرسالة فالحالتين (fail-closed)
                     throw MlConfigParseException("wrong password")
                 }
             }
         }
+
         return try {
             val json = JSONObject(String(plaintext, Charsets.UTF_8))
-            val fieldsJson = json.optJSONObject("fields") ?: JSONObject()
-            val fields = mutableMapOf<String, Any?>()
-            val keys = fieldsJson.keys()
-            while (keys.hasNext()) {
-                val k = keys.next()
-                fields[k] = fieldsJson.get(k)
+            val isV2 = bytes[4] == FORMAT_VERSION
+            if (!isV2) {
+                parseLegacyPayload(json)
+            } else {
+                val dataString = json.optString("data", "")
+                val ownerPublicKey = json.optString("ownerPublicKey", "")
+                val signature = json.optString("signature", "")
+                if (dataString.isBlank() || ownerPublicKey.isBlank() || signature.isBlank()) {
+                    throw MlConfigParseException("unsigned config")
+                }
+                val valid = verifySignature(
+                    ownerPublicKey,
+                    signature,
+                    dataString.toByteArray(Charsets.UTF_8)
+                )
+                val data = JSONObject(dataString)
+                val parsed = parseDataObject(data)
+                Parsed(
+                    name = parsed.name,
+                    serverMessage = parsed.serverMessage,
+                    fields = parsed.fields,
+                    isSigned = true,
+                    signatureValid = valid,
+                    ownerPublicKey = ownerPublicKey
+                )
             }
-            Parsed(
-                name = json.optString("name", ""),
-                serverMessage = json.optString("msg", ""),
-                fields = fields
-            )
+        } catch (e: MlConfigParseException) {
+            throw e
         } catch (_: Throwable) {
             throw MlConfigParseException("corrupt file")
         }
     }
 
-    /**
-     * FLAG_PLAIN: تجرب الفورمات الجديد أولا (IV + AES-GCM بمفتاح ثابت) -
-     * إلا فشلت (ملف قديم محفوظ قبل هاد التعديل: JSON خام بلا IV/تشفير)،
-     * كترجع لبالفورمات القديم مباشرة. هادشي كيضمن ملفات "Unprotected"
-     * القديمة تبقى خدامة بلا ما يحتاج المستخدم يعاود يصاوبهم.
-     */
+    private fun parseLegacyPayload(json: JSONObject): Parsed {
+        val parsed = parseDataObject(json)
+        return Parsed(
+            name = parsed.name,
+            serverMessage = parsed.serverMessage,
+            fields = parsed.fields,
+            isSigned = false,
+            signatureValid = false,
+            ownerPublicKey = null
+        )
+    }
+
+    private fun parseDataObject(json: JSONObject): Parsed {
+        val fieldsJson = json.optJSONObject("fields") ?: JSONObject()
+        val fields = mutableMapOf<String, Any?>()
+        val keys = fieldsJson.keys()
+        while (keys.hasNext()) {
+            val k = keys.next()
+            fields[k] = fieldsJson.get(k)
+        }
+        return Parsed(
+            name = json.optString("name", ""),
+            serverMessage = json.optString("msg", ""),
+            fields = fields
+        )
+    }
+
     private fun decryptPlainFlagged(bytes: ByteArray): ByteArray {
-        if (bytes.size >= HEADER_LEN + GCM_IV_LEN) {
+        if (bytes[4] == FORMAT_VERSION && bytes.size >= HEADER_LEN + GCM_IV_LEN) {
             try {
                 val iv = bytes.copyOfRange(HEADER_LEN, HEADER_LEN + GCM_IV_LEN)
                 val ciphertext = bytes.copyOfRange(HEADER_LEN + GCM_IV_LEN, bytes.size)
                 val cipher = Cipher.getInstance("AES/GCM/NoPadding")
                 cipher.init(Cipher.DECRYPT_MODE, staticKey(), GCMParameterSpec(GCM_TAG_BITS, iv))
                 val result = cipher.doFinal(ciphertext)
-                // تحقق إضافي: النتيجة خاصها تكون JSON صحيح، وإلا فهاد
-                // الملف كان قديم (JSON خام) وصادف طولو كافي لهاد الفرع
-                // بلا ما يكون فعلا مشفر - نرجعو لبالفورمات القديم تحت.
                 JSONObject(String(result, Charsets.UTF_8))
                 return result
             } catch (_: Throwable) {
-                // مشيش - نجربو الفورمات القديم تحت
+                // fallback below for old v1 unprotected files
+            }
+        } else if (bytes.size >= HEADER_LEN + GCM_IV_LEN) {
+            try {
+                val iv = bytes.copyOfRange(HEADER_LEN, HEADER_LEN + GCM_IV_LEN)
+                val ciphertext = bytes.copyOfRange(HEADER_LEN + GCM_IV_LEN, bytes.size)
+                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                cipher.init(Cipher.DECRYPT_MODE, staticKey(), GCMParameterSpec(GCM_TAG_BITS, iv))
+                val result = cipher.doFinal(ciphertext)
+                JSONObject(String(result, Charsets.UTF_8))
+                return result
+            } catch (_: Throwable) {
+                // old v1 plaintext fallback
             }
         }
-        // الفورمات القديم: JSON خام مباشرة من بعد الـheader
         return bytes.copyOfRange(HEADER_LEN, bytes.size)
     }
 
     private fun validateHeader(bytes: ByteArray) {
         if (bytes.size < HEADER_LEN) throw MlConfigParseException("too short")
         if (!bytes.copyOfRange(0, 4).contentEquals(MAGIC)) throw MlConfigParseException("not a MR VPN TUNNEL config")
-        if (bytes[4] != FORMAT_VERSION) throw MlConfigParseException("unsupported version")
+        if (bytes[4] != FORMAT_VERSION && bytes[4] != FORMAT_VERSION_LEGACY) {
+            throw MlConfigParseException("unsupported version")
+        }
+        if (bytes[5] != FLAG_PLAIN && bytes[5] != FLAG_ENCRYPTED) {
+            throw MlConfigParseException("invalid flags")
+        }
     }
 
-    /** كيفك AES-GCM بعدد iterations محدد - مستعملة من parse() باش تجرب PBKDF2_ITERATIONS ثم PBKDF2_ITERATIONS_LEGACY. */
     private fun decryptWithIterations(ciphertext: ByteArray, password: String, salt: ByteArray, iv: ByteArray, iterations: Int): ByteArray {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.DECRYPT_MODE, deriveKey(password, salt, iterations), GCMParameterSpec(GCM_TAG_BITS, iv))
         return cipher.doFinal(ciphertext)
     }
 
-    /** build() ديما كيستعمل PBKDF2_ITERATIONS (الجديد) - iterations هنا كـparameter غير باش parse() تقدر تجرب القديم. */
     private fun deriveKey(password: String, salt: ByteArray, iterations: Int = PBKDF2_ITERATIONS): SecretKeySpec {
         val spec = PBEKeySpec(password.toCharArray(), salt, iterations, 256)
         val skf = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
