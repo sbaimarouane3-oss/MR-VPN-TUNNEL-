@@ -261,8 +261,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val crashLogPath = File(applicationContext.filesDir, "vpn_native_crash.txt").absolutePath
-        val guardStatus = CrashGuard.installIfPossible(crashLogPath)
-        appendStartupDiag(guardStatus)
+        CrashGuard.installIfPossible(crashLogPath)
         try {
             val crashFile = File(crashLogPath)
             if (crashFile.exists() && crashFile.length() > 0) {
@@ -491,6 +490,16 @@ class MainActivity : AppCompatActivity() {
         // vpn_log_share.txt الذي يتم إنشاؤه فقط عند الضغط على Share Log.
         try {
             File(cacheDir, "vpn_log_share.txt").delete()
+        } catch (_: Throwable) { }
+
+        // مسح vpn_startup_diag.txt (ملف الـcrash guard) أيضاً - هذا الملف
+        // كان كيتزاد فيه سطر جديد فـappendStartupDiag() كل launch، وعمرو
+        // ماكان كيتمسح لا هنا ولا فأي بلاصة أخرى، فكان كيتراكم من بداية
+        // استعمال التطبيق. النتيجة: أي كراش حقيقي جديد كان كيجيب معاه
+        // كامل التاريخ ديال "crash guard installed successfully" السابقين
+        // فـShare Log، وهذا اللي كان كيبان بحال كراش كيتكرر بزاف.
+        try {
+            File(applicationContext.filesDir, "vpn_startup_diag.txt").delete()
         } catch (_: Throwable) { }
 
         // 6) واجهة فورية (بلا ما نستنى الحذف ديال الملفات، لي كيدير IO):
