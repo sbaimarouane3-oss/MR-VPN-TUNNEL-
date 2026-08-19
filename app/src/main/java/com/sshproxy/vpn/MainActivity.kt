@@ -480,14 +480,20 @@ class MainActivity : AppCompatActivity() {
         connectionStatePrefs().edit().clear().apply()
         getSharedPreferences("proxy_share_prefs", MODE_PRIVATE).edit().clear().apply()
 
-        // 5) واجهة فورية (بلا ما نستنى الحذف ديال الملفات، لي كيدير IO):
+        // 5) مسح Connection Log أيضاً، وتصفير الكاش ديال الواجهة.
+        // مهم: Clear All Data خاصو يمسح حتى السجل، ماشي غير الـconfigs.
+        LogManager.clear(applicationContext)
+        lastLogContent = ""
+        logFragment?.txtLog?.text = ""
+
+        // 6) واجهة فورية (بلا ما نستنى الحذف ديال الملفات، لي كيدير IO):
         // الحقول ترجع افتراضية، الكارد ديال Saved Config/Imported يختفي.
         restoreManualFields()
         updateImportUiState()
         configFragment?.updateActiveVisuals(null, false, false)
         applyConnectButtonState()
 
-        // 6) مسح كل ملفات Saved Config (.ml) فـDownloads/MR VPN TUNNEL -
+        // 7) مسح كل ملفات Saved Config (.ml) فـDownloads/MR VPN TUNNEL -
         // list()/delete() كيديرو MediaStore/File IO، خاصهم Dispatchers.IO
         // (نفس القاعدة ديال saveNewConfig فوق). configFragment?.refreshList()
         // هنا كيرجع يقرا اللائحة (خاوية دابا) من نفس المصدر.
@@ -1258,7 +1264,10 @@ class MainActivity : AppCompatActivity() {
         f.edtUser.setText(p.getString("user", ""))
         f.edtPass.setText(p.getString("pass", ""))
         f.edtProxy.setText(p.getString("proxy", ""))
-        if (p.contains("payload")) f.edtPayload.setText(p.getString("payload", ""))
+        // Always restore Payload, even when the preference key was removed by Clear.
+        // Previously this field was only updated when "payload" existed, so Clear
+        // could leave the old Payload visible in the UI.
+        f.edtPayload.setText(p.getString("payload", ""))
         val opt = PROTOCOL_OPTIONS.find { it.label == p.getString("protocol", DEFAULT_PROTOCOL.label) }
             ?: DEFAULT_PROTOCOL
         f.chkUsePayload.isChecked = p.getBoolean("usePayload", opt.usePayload)
