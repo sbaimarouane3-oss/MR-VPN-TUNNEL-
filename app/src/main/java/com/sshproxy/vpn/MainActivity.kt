@@ -553,7 +553,20 @@ class MainActivity : AppCompatActivity() {
         // إذا كان VPN متصل (أو فطور الاتصال) ملي طلع "New Version Available"،
         // نقطعو الاتصال تلقائيا - المستخدم خاصو يحدث التطبيق، وما بغيناش
         // يبقى Tunnel شغال بنسخة قديمة فالخلفية بلا ما المستخدم يعرف.
-        if (connected || connecting) disconnect()
+        if (connected || connecting) {
+            disconnect()
+            // رسالة تنبيه بلون الزيون فقط - بلا ما نمس أي حاجة فمنطق
+            // الاتصال/الـprofile ديال VPN. الهدف غير نعلمو المستخدم أن
+            // الحماية طاحت بسبب الانقطاع التلقائي.
+            Toast.makeText(
+                this,
+                "⚠️ VPN disconnected — update required. Your traffic is not protected.",
+                Toast.LENGTH_LONG
+            ).apply {
+                view?.findViewById<TextView>(android.R.id.message)
+                    ?.setTextColor(android.graphics.Color.parseColor("#FFD700"))
+            }.show()
+        }
 
         val view = layoutInflater.inflate(R.layout.dialog_update, null)
         val txtTitle = view.findViewById<TextView>(R.id.txtUpdateTitle)
