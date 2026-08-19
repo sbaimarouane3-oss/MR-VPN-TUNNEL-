@@ -123,11 +123,8 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
             ContextCompat.getColor(requireContext(), if (entry.isEncrypted) R.color.state_error else R.color.accent_green)
         )
 
-        // Edit دابا متاح لكل الملفات (محمية ولا لا) - password إجباري
-        // على كل حفظ جديد دابا، فما بقاش داعي نمنعو Edit على الملفات
-        // المحمية (كان قبل هادشي بحيث الحفظ القديم كان بلا password إلا
-        // لأصلا الملف بلا password). editEntry() تحت كتطلب password أولا
-        // إلا كان الملف محمي.
+        // Edit خاصو يكون متاح غير لملف مملوك لهذا الجهاز.
+        // التحقق الحقيقي كيدوز داخل editEntry() بعد فك الملف والتحقق من التوقيع.
         btnEdit.visibility = View.VISIBLE
 
         btnAction.setOnClickListener { onActionTapped(entry) }
@@ -140,9 +137,9 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
                 expandedNames.add(entry.displayName)
                 expandPanel.visibility = View.VISIBLE
                 txtInfo.text = if (entry.isEncrypted) {
-                    "This config is password protected. Editing requires the password - sharing and deleting are always available."
+                    "Password protected. Only the device that created this config can edit it. Other devices can connect and share it."
                 } else {
-                    "Unprotected config. You can edit its fields, share the file, or delete it."
+                    "Only the device that created this config can edit it. Other devices can connect and share it."
                 }
             }
         }
@@ -233,34 +230,37 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
 
     private fun editEntry(entry: ConfigFileEntry) {
         val ctx = context ?: return
-        if (entry.isEncrypted) {
-            val cached = UnlockedConfigCache.get(entry.displayName)
-            if (cached != null) {
-                (requireActivity() as? MainActivity)?.loadFieldsForEditing(entry.displayName, cached)
-                Toast.makeText(ctx, "Loaded into SSH SETTINGS for editing. Use + NEW CONFIG to save your changes.", Toast.LENGTH_LONG).show()
-            } else {
-                promptPasswordForEdit(entry)
-            }
-            return
-        }
+        // لا نعتمد على cache هنا، لأن صلاحية Edit خاصها تتأكد من الملف
+        // نفسه + التوقيع + Android Keystore ديال هذا الجهاز.
         lifecycleScope.launch {
             val bytes = withContext(Dispatchers.IO) { ConfigStorageManager.readBytes(ctx, entry.uri) }
             if (bytes == null) {
                 Toast.makeText(ctx, "Could not read file.", Toast.LENGTH_SHORT).show()
                 return@launch
             }
-            try {
-                val parsed = MlConfigFile.parse(bytes, null)
-                (requireActivity() as? MainActivity)?.loadFieldsForEditing(entry.displayName, parsed.fields)
-                Toast.makeText(ctx, "Loaded into SSH SETTINGS for editing. Use + NEW CONFIG to save your changes.", Toast.LENGTH_LONG).show()
-            } catch (_: Throwable) {
-                Toast.makeText(ctx, "Could not load config for editing.", Toast.LENGTH_SHORT).show()
+
+            if (entry.isEncrypted) {
+                promptPasswordForEdit(entry, bytes)
+            } else {
+                try {
+                    val parsed = withContext(Dispatchers.Default) { MlConfigFile.parse(bytes, null) }
+                    if (!MlConfigFile.isOwner(ctx, parsed)) {
+                        Toast.makeText(ctx, "Only the device that created this config can edit it.", Toast.LENGTH_LONG).show()
+                        return@launch
+                    }
+                    (requireActivity() as? MainActivity)?.loadFieldsForEditing(
+                        entry.displayName, parsed.fields, ownerVerified = true
+                    )
+                    Toast.makeText(ctx, "Loaded into SSH SETTINGS for editing. Use + NEW CONFIG to save your changes.", Toast.LENGTH_LONG).show()
+                } catch (_: Throwable) {
+                    Toast.makeText(ctx, "Could not verify config ownership.", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
 
-    /** بحال promptPasswordAndConnect لكن الهدف Edit ماشي Connect - نفس UnlockedConfigCache. */
-    private fun promptPasswordForEdit(entry: ConfigFileEntry) {
+    /** Password كتفتح المحتوى، ولكن الملكية كتتحقق بالتوقيع + Android Keystore. */
+    private fun promptPasswordForEdit(entry: ConfigFileEntry, bytes: ByteArray) {
         val ctx = context ?: return
         val input = EditText(ctx).apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
@@ -268,25 +268,26 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
         }
         AlertDialog.Builder(ctx)
             .setTitle("Protected Config")
-            .setMessage("Enter the password to edit this config.")
+            .setMessage("Enter the password. Editing is allowed only on the device that created this config.")
             .setView(wrapDialogInput(input))
             .setPositiveButton("Continue") { _, _ ->
                 val password = input.text.toString()
                 lifecycleScope.launch {
-                    val bytes = withContext(Dispatchers.IO) { ConfigStorageManager.readBytes(ctx, entry.uri) }
-                    if (bytes == null) {
-                        Toast.makeText(ctx, "Could not read file.", Toast.LENGTH_SHORT).show()
-                        return@launch
-                    }
                     try {
                         val parsed = withContext(Dispatchers.Default) { MlConfigFile.parse(bytes, password) }
+                        if (!MlConfigFile.isOwner(ctx, parsed)) {
+                            Toast.makeText(ctx, "This config belongs to another device. You can connect to it, but you cannot edit it.", Toast.LENGTH_LONG).show()
+                            return@launch
+                        }
                         UnlockedConfigCache.put(entry.displayName, parsed.fields)
-                        (requireActivity() as? MainActivity)?.loadFieldsForEditing(entry.displayName, parsed.fields)
+                        (requireActivity() as? MainActivity)?.loadFieldsForEditing(
+                            entry.displayName, parsed.fields, ownerVerified = true
+                        )
                         Toast.makeText(ctx, "Loaded into SSH SETTINGS for editing. Use + NEW CONFIG to save your changes.", Toast.LENGTH_LONG).show()
                     } catch (_: MlConfigParseException) {
-                        Toast.makeText(ctx, "Wrong password.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(ctx, "Wrong password or invalid config.", Toast.LENGTH_SHORT).show()
                     } catch (_: Throwable) {
-                        Toast.makeText(ctx, "Wrong password.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(ctx, "Could not verify config ownership.", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
