@@ -486,6 +486,13 @@ class MainActivity : AppCompatActivity() {
         lastLogContent = ""
         logFragment?.txtLog?.text = ""
 
+        // مسح نسخة Share Log التي تم إنشاؤها سابقاً داخل cache.
+        // LogManager.clear() يمسح Connection Log، لكنه لا يمسح ملف
+        // vpn_log_share.txt الذي يتم إنشاؤه فقط عند الضغط على Share Log.
+        try {
+            File(cacheDir, "vpn_log_share.txt").delete()
+        } catch (_: Throwable) { }
+
         // 6) واجهة فورية (بلا ما نستنى الحذف ديال الملفات، لي كيدير IO):
         // الحقول ترجع افتراضية، الكارد ديال Saved Config/Imported يختفي.
         restoreManualFields()
@@ -937,12 +944,10 @@ class MainActivity : AppCompatActivity() {
         val bytes = try {
             MlConfigFile.build(applicationContext, name, "", fields, password.ifBlank { null })
         } catch (e: MlConfigWeakPasswordException) {
-            // احتياط (defense in depth): showNewConfigPasswordDialog() كتفحص
-            // هادشي ديجا قبل ما تنادي هاد الدالة - هنا غير باش مانبقاوش بلا
-            // معالجة إلا وصلنا لهنا من مسار آخر فالمستقبل.
             Toast.makeText(this, "Password must be at least ${MlConfigFile.MIN_PASSWORD_LENGTH} characters.", Toast.LENGTH_LONG).show()
             return
         }
+
         val editingOriginal = editingConfigOriginalName
         if (editingOriginal != null && !editingConfigOwnerVerified) {
             Toast.makeText(this, "This config belongs to another device. Create a new config instead.", Toast.LENGTH_LONG).show()
@@ -953,36 +958,107 @@ class MainActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             val allEntries = withContext(Dispatchers.IO) { ConfigStorageManager.list(applicationContext) }
-            val ok: Boolean
-            val savedFileName: String
+            var ok = false
+            var savedFileName: String? = null
+
             if (editingOriginal != null) {
                 val target = allEntries.firstOrNull { it.displayName.equals(editingOriginal, ignoreCase = true) }
                 if (target != null) {
-                    ok = withContext(Dispatchers.IO) { ConfigStorageManager.overwrite(applicationContext, target, bytes) }
-                    savedFileName = target.displayName
+                    val newFileName = ConfigStorageManager.finalFileName(name)
+                    val sameName = newFileName.equals(target.displayName, ignoreCase = true)
+
+                    if (sameName) {
+                        // نفس الاسم: نكتب فوق الملف نفسه.
+                        ok = withContext(Dispatchers.IO) {
+                            ConfigStorageManager.overwrite(applicationContext, target, bytes)
+                        }
+                        savedFileName = target.displayName
+                    } else {
+                        // الاسم تبدل: overwrite() وحدها كتبدل المحتوى فقط وما كتبدلش
+                        // اسم الملف. لذلك نحفظ نسخة جديدة بالاسم الجديد ثم نحذف القديم.
+                        val collision = allEntries.firstOrNull {
+                            it.displayName.equals(newFileName, ignoreCase = true)
+                        }
+
+                        if (collision != null) {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "\"$newFileName\" already exists. Please choose a different name.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                            return@launch
+                        }
+
+                        val savedNew = withContext(Dispatchers.IO) {
+                            ConfigStorageManager.save(applicationContext, name, bytes)
+                        }
+
+                        if (savedNew != null) {
+                            // ما نمسحوش الملف القديم إلا بعد نجاح إنشاء الملف الجديد.
+                            val deletedOld = withContext(Dispatchers.IO) {
+                                ConfigStorageManager.delete(applicationContext, target)
+                            }
+                            if (deletedOld) {
+                                UnlockedConfigCache.remove(target.displayName)
+                                ok = true
+                                savedFileName = savedNew.second
+                            } else {
+                                // فشل حذف القديم: نحاول نحافظ على سلامة البيانات.
+                                // الملف الجديد بقى محفوظ، لكن ما نعتبرش العملية مكتملة.
+                                ok = false
+                                savedFileName = savedNew.second
+                            }
+                        }
+                    }
                 } else {
-                    ok = ConfigStorageManager.save(applicationContext, name, bytes) != null
-                    savedFileName = ConfigStorageManager.finalFileName(name)
+                    // الملف الأصلي تحيد من قبل: ننشئ ملف جديد بالاسم المطلوب.
+                    val saved = withContext(Dispatchers.IO) {
+                        ConfigStorageManager.save(applicationContext, name, bytes)
+                    }
+                    ok = saved != null
+                    savedFileName = saved?.second ?: ConfigStorageManager.finalFileName(name)
                 }
             } else {
                 val fileName = ConfigStorageManager.finalFileName(name)
                 val existing = allEntries.firstOrNull { it.displayName.equals(fileName, ignoreCase = true) }
-                ok = if (existing != null) ConfigStorageManager.overwrite(applicationContext, existing, bytes)
-                else ConfigStorageManager.save(applicationContext, name, bytes) != null
+                if (existing != null) {
+                    ok = withContext(Dispatchers.IO) {
+                        ConfigStorageManager.overwrite(applicationContext, existing, bytes)
+                    }
+                } else {
+                    ok = withContext(Dispatchers.IO) {
+                        ConfigStorageManager.save(applicationContext, name, bytes) != null
+                    }
+                }
                 savedFileName = fileName
             }
-            if (ok) {
-                Toast.makeText(this@MainActivity, "Config saved to Download/MR VPN TUNNEL \u2705", Toast.LENGTH_SHORT).show()
+
+            if (ok && savedFileName != null) {
+                // حدّث هوية الملف النشط حتى يبان الاسم الجديد مباشرة في SSH SETTINGS
+                // وما يبقاش activeConfigFileName مربوط بالاسم القديم.
+                activeConfigFileName = savedFileName
+                configSource = ConfigSource.SAVED_CONFIG
+                persistLastSavedConfigFileName(savedFileName)
+
+                Toast.makeText(
+                    this@MainActivity,
+                    "Config saved to Download/MR VPN TUNNEL ✅",
+                    Toast.LENGTH_SHORT
+                ).show()
                 editingConfigOriginalName = null
                 editingConfigOwnerVerified = false
                 UnlockedConfigCache.remove(savedFileName)
+                configFragment?.refreshList()
+                updateConnectionSummary()
+            } else if (editingOriginal != null) {
+                Toast.makeText(this@MainActivity, "Could not rename/save config. The original file was kept.", Toast.LENGTH_LONG).show()
+                configFragment?.refreshList()
             } else {
                 Toast.makeText(this@MainActivity, "Could not save config.", Toast.LENGTH_SHORT).show()
+                configFragment?.refreshList()
             }
-            configFragment?.refreshList()
         }
     }
-
 
     /** كيكتب فـ manual_fields prefs غير المفاتيح الموجودة فـ fields - بلا ما يمس أي حاجة أخرى. */
     private fun applyFieldsToManualPrefs(fields: Map<String, Any?>) {
