@@ -42,6 +42,7 @@ import com.sshproxy.vpn.importer.ImportedConfig
 import com.sshproxy.vpn.importer.InvalidImportCodeException
 import com.sshproxy.vpn.importer.MlConfigFile
 import com.sshproxy.vpn.importer.MlConfigParseException
+import com.sshproxy.vpn.importer.MlConfigWeakPasswordException
 import com.sshproxy.vpn.importer.SecureConfigStore
 import com.sshproxy.vpn.importer.XraySecureConfigStore
 import com.sshproxy.vpn.xray.ParsedProxyConfig
@@ -854,13 +855,11 @@ class MainActivity : AppCompatActivity() {
                     return@setPositiveButton
                 }
                 if (isEditing) {
-                    // Edit فـConfigFragment ماكاينش إلا للملفات بلا كلمة سر
-                    // (شوف btnEdit.visibility فـConfigFragment) - إذن الحفظ
-                    // هنا دايما بلا كلمة سر، باش الحماية (أو غيابها) تبقى
-                    // كما هي بلا ما نخلقو حماية جديدة ولا نضيعوها. الحفظ
-                    // كيدير In-Place مباشرة عبر editingConfigOriginalName -
-                    // شوف saveNewConfig().
-                    saveNewConfig(name, "")
+                    // Password إجباري دابا على كل حفظ (جديد ولا Edit) - نفس
+                    // dialog password (showNewConfigPasswordDialog) لي
+                    // كيدير الحفظ In-Place عبر editingConfigOriginalName
+                    // (شوف saveNewConfig()).
+                    showNewConfigPasswordDialog(name)
                 } else {
                     lifecycleScope.launch {
                         val fileName = ConfigStorageManager.finalFileName(name)
@@ -888,13 +887,30 @@ class MainActivity : AppCompatActivity() {
     private fun showNewConfigPasswordDialog(name: String) {
         val passInput = EditText(this).apply {
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-            hint = "Password (optional - leave empty for no protection)"
+            hint = "Password (required, min ${MlConfigFile.MIN_PASSWORD_LENGTH} characters)"
         }
         AlertDialog.Builder(this)
-            .setTitle("Protect with a Password?")
-            .setMessage("If you set a password, the file will be strongly encrypted (AES-256) and no one can read the server info inside without it. Leave empty to keep the file open, editable, and shareable as-is.")
+            .setTitle("Set a Password")
+            .setMessage("Every config must be protected with a password. It will be strongly encrypted (AES-256) - no one can read the server info inside without it.")
             .setView(passInput)
-            .setPositiveButton("Save") { _, _ -> saveNewConfig(name, passInput.text.toString()) }
+            .setPositiveButton("Save") { _, _ ->
+                val password = passInput.text.toString()
+                if (password.isEmpty()) {
+                    Toast.makeText(this, "A password is required.", Toast.LENGTH_SHORT).show()
+                    showNewConfigPasswordDialog(name)
+                    return@setPositiveButton
+                }
+                if (password.length < MlConfigFile.MIN_PASSWORD_LENGTH) {
+                    Toast.makeText(
+                        this,
+                        "Password must be at least ${MlConfigFile.MIN_PASSWORD_LENGTH} characters.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    showNewConfigPasswordDialog(name)
+                    return@setPositiveButton
+                }
+                saveNewConfig(name, password)
+            }
             .setNegativeButton("Back") { _, _ -> showNewConfigNameDialog() }
             .show()
     }
@@ -909,7 +925,15 @@ class MainActivity : AppCompatActivity() {
      */
     private fun saveNewConfig(name: String, password: String) {
         val fields = currentManualFieldsSnapshot()
-        val bytes = MlConfigFile.build(name, "", fields, password.ifBlank { null })
+        val bytes = try {
+            MlConfigFile.build(name, "", fields, password.ifBlank { null })
+        } catch (e: MlConfigWeakPasswordException) {
+            // احتياط (defense in depth): showNewConfigPasswordDialog() كتفحص
+            // هادشي ديجا قبل ما تنادي هاد الدالة - هنا غير باش مانبقاوش بلا
+            // معالجة إلا وصلنا لهنا من مسار آخر فالمستقبل.
+            Toast.makeText(this, "Password must be at least ${MlConfigFile.MIN_PASSWORD_LENGTH} characters.", Toast.LENGTH_LONG).show()
+            return
+        }
         val editingOriginal = editingConfigOriginalName
 
         lifecycleScope.launch {
@@ -1013,6 +1037,30 @@ class MainActivity : AppCompatActivity() {
             appendLog("ERROR: ${e.javaClass.simpleName}: ${e.message ?: "Unknown error"}")
         }
         configFragment?.updateActiveVisuals(activeConfigFileName, connected, connecting)
+    }
+
+    /**
+     * إلا كان هاد الملف بالضبط هو ديجا activeConfigFileName/SAVED_CONFIG
+     * المحمل حاليا (سواء بقا محمل من نفس الجلسة، أو تسترجع من
+     * SecureConfigStore/XraySecureConfigStore عند onCreate بعد ما التطبيق
+     * تقتل بالكامل وتعاود يتفتح - شوف التعليق فـonCreate) - كنشغلوه
+     * مباشرة بنفس الحقول المفكوكة ديجا، بلا ما نحتاجو نعاودو نقرا/نفكو
+     * الملف من القرص ولا نطلبو password ثانية. هادشي كيحل الحالة لي كان
+     * فيها ConfigFragment.onActionTapped() كيشوف غير فـUnlockedConfigCache
+     * (فارغة دايما بعد process kill) وكيتجاهل كليا أن MainActivity ديجا
+     * عندها نفس الكونفيغ محمل من التخزين الدائم.
+     */
+    fun startIfAlreadyLoaded(displayName: String): Boolean {
+        if (activeConfigFileName != displayName || configSource != ConfigSource.SAVED_CONFIG) return false
+        if (activeImportedConfig == null && activeXrayConfig == null) return false
+        updateImportUiState()
+        try {
+            if (!connected && !connecting) tryConnect()
+        } catch (e: Throwable) {
+            appendLog("ERROR: ${e.javaClass.simpleName}: ${e.message ?: "Unknown error"}")
+        }
+        configFragment?.updateActiveVisuals(activeConfigFileName, connected, connecting)
+        return true
     }
 
     /** زر ■ فـCONFIG tab: نفس disconnect() ديال SSH SETTINGS (لي كيمسح activeConfigFileName بحالو - سلوك قديم بلا تغيير) + تحديث لائحة CONFIG. */
