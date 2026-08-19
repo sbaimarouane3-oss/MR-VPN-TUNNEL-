@@ -139,6 +139,8 @@ class MainActivity : AppCompatActivity() {
     // هنا باش لما يعاود يحفظ بنفس الاسم من "+ NEW CONFIG" نديرو Overwrite
     // بلا خطأ "الاسم مستعمل ديجا" (التكرار ممنوع غير للأسماء المختلفة).
     private var editingConfigOriginalName: String? = null
+    // true فقط بعد ما نتحقق أن الملف الأصلي موقع بمفتاح الملكية الموجود في هذا الجهاز.
+    private var editingConfigOwnerVerified: Boolean = false
     // .ml ملف جاي من نية VIEW خارجية (تلغرام/واتساب...) وصل قبل ما
     // SshFragment يكون جاهز - كنأخروه لحد onSshFragmentReady.
     private var pendingIncomingUri: Uri? = null
@@ -468,6 +470,7 @@ class MainActivity : AppCompatActivity() {
         // 3) هوية الملف/المصدر (Saved Config identity + persistence ديالها).
         activeConfigFileName = null
         editingConfigOriginalName = null
+        editingConfigOwnerVerified = false
         configSource = ConfigSource.NONE
         persistLastSavedConfigFileName(null)
         persistImportedConfigActive(false)
@@ -926,7 +929,7 @@ class MainActivity : AppCompatActivity() {
     private fun saveNewConfig(name: String, password: String) {
         val fields = currentManualFieldsSnapshot()
         val bytes = try {
-            MlConfigFile.build(name, "", fields, password.ifBlank { null })
+            MlConfigFile.build(applicationContext, name, "", fields, password.ifBlank { null })
         } catch (e: MlConfigWeakPasswordException) {
             // احتياط (defense in depth): showNewConfigPasswordDialog() كتفحص
             // هادشي ديجا قبل ما تنادي هاد الدالة - هنا غير باش مانبقاوش بلا
@@ -935,6 +938,12 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val editingOriginal = editingConfigOriginalName
+        if (editingOriginal != null && !editingConfigOwnerVerified) {
+            Toast.makeText(this, "This config belongs to another device. Create a new config instead.", Toast.LENGTH_LONG).show()
+            editingConfigOriginalName = null
+            editingConfigOwnerVerified = false
+            return
+        }
 
         lifecycleScope.launch {
             val allEntries = withContext(Dispatchers.IO) { ConfigStorageManager.list(applicationContext) }
@@ -959,6 +968,7 @@ class MainActivity : AppCompatActivity() {
             if (ok) {
                 Toast.makeText(this@MainActivity, "Config saved to Download/MR VPN TUNNEL \u2705", Toast.LENGTH_SHORT).show()
                 editingConfigOriginalName = null
+                editingConfigOwnerVerified = false
                 UnlockedConfigCache.remove(savedFileName)
             } else {
                 Toast.makeText(this@MainActivity, "Could not save config.", Toast.LENGTH_SHORT).show()
@@ -992,13 +1002,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** Edit flow (ConfigFragment "Edit", بلا كلمة سر فقط): يعمر الحقول ويرجع لتبويب SSH SETTINGS بلا اتصال تلقائي. */
-    fun loadFieldsForEditing(originalName: String, fields: Map<String, Any?>) {
+    fun loadFieldsForEditing(originalName: String, fields: Map<String, Any?>, ownerVerified: Boolean = false) {
+        if (!ownerVerified) {
+            Toast.makeText(this, "Only the device that created this config can edit it.", Toast.LENGTH_LONG).show()
+            return
+        }
         clearActiveImportedConfigSilently()
         activeConfigFileName = null
         persistLastSavedConfigFileName(null)
         persistImportedConfigActive(false)
         configFragment?.updateActiveVisuals(null, false, false)
         editingConfigOriginalName = originalName
+        editingConfigOwnerVerified = true
         applyFieldsToManualPrefs(fields)
         restoreManualFields()
         updateImportUiState()
@@ -1379,6 +1394,7 @@ class MainActivity : AppCompatActivity() {
         persistLastSavedConfigFileName(null)
         persistImportedConfigActive(false)
         editingConfigOriginalName = null
+        editingConfigOwnerVerified = false
         configFragment?.updateActiveVisuals(null, connected, connecting)
         val f = sshFragment
         if (f != null) {
@@ -1554,6 +1570,7 @@ class MainActivity : AppCompatActivity() {
                 persistLastSavedConfigFileName(null)
                 persistImportedConfigActive(false)
                 editingConfigOriginalName = null
+                editingConfigOwnerVerified = false
                 configFragment?.updateActiveVisuals(null, connected, connecting)
                 updateImportUiState()
                 Toast.makeText(this, "Imported config removed", Toast.LENGTH_SHORT).show()
