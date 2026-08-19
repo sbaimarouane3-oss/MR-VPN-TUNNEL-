@@ -1001,12 +1001,12 @@ class MainActivity : AppCompatActivity() {
                             if (deletedOld) {
                                 UnlockedConfigCache.remove(target.displayName)
                                 ok = true
-                                savedFileName = savedNew.second
+                                savedFileName = newFileName
                             } else {
                                 // فشل حذف القديم: نحاول نحافظ على سلامة البيانات.
                                 // الملف الجديد بقى محفوظ، لكن ما نعتبرش العملية مكتملة.
                                 ok = false
-                                savedFileName = savedNew.second
+                                savedFileName = newFileName
                             }
                         }
                     }
@@ -1016,7 +1016,7 @@ class MainActivity : AppCompatActivity() {
                         ConfigStorageManager.save(applicationContext, name, bytes)
                     }
                     ok = saved != null
-                    savedFileName = saved?.second ?: ConfigStorageManager.finalFileName(name)
+                    savedFileName = ConfigStorageManager.finalFileName(name)
                 }
             } else {
                 val fileName = ConfigStorageManager.finalFileName(name)
