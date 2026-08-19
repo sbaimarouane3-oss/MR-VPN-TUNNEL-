@@ -550,6 +550,11 @@ class MainActivity : AppCompatActivity() {
         if (isFinishing || isDestroyed) return
         val update = UpdateManager.getPendingUpdate(applicationContext) ?: return
 
+        // إذا كان VPN متصل (أو فطور الاتصال) ملي طلع "New Version Available"،
+        // نقطعو الاتصال تلقائيا - المستخدم خاصو يحدث التطبيق، وما بغيناش
+        // يبقى Tunnel شغال بنسخة قديمة فالخلفية بلا ما المستخدم يعرف.
+        if (connected || connecting) disconnect()
+
         val view = layoutInflater.inflate(R.layout.dialog_update, null)
         val txtTitle = view.findViewById<TextView>(R.id.txtUpdateTitle)
         val txtVersion = view.findViewById<TextView>(R.id.txtUpdateVersion)
