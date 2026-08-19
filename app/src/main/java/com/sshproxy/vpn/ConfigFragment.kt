@@ -123,10 +123,12 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
             ContextCompat.getColor(requireContext(), if (entry.isEncrypted) R.color.state_error else R.color.accent_green)
         )
 
-        // Edit/Share مسموحين دايما للملف بلا كلمة سر - ملف بكلمة سر:
-        // Share و Delete غير (بلا Edit، حيت التعديل خاصو يقرا المحتوى
-        // الخام والملف مصمم باش حتى التطبيق ما يقدر يوريه بلا الكلمة).
-        btnEdit.visibility = if (entry.isEncrypted) View.GONE else View.VISIBLE
+        // Edit دابا متاح لكل الملفات (محمية ولا لا) - password إجباري
+        // على كل حفظ جديد دابا، فما بقاش داعي نمنعو Edit على الملفات
+        // المحمية (كان قبل هادشي بحيث الحفظ القديم كان بلا password إلا
+        // لأصلا الملف بلا password). editEntry() تحت كتطلب password أولا
+        // إلا كان الملف محمي.
+        btnEdit.visibility = View.VISIBLE
 
         btnAction.setOnClickListener { onActionTapped(entry) }
 
@@ -138,7 +140,7 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
                 expandedNames.add(entry.displayName)
                 expandPanel.visibility = View.VISIBLE
                 txtInfo.text = if (entry.isEncrypted) {
-                    "This config is password protected. Only sharing and deleting are available - its contents can't be shown or edited without the password."
+                    "This config is password protected. Editing requires the password - sharing and deleting are always available."
                 } else {
                     "Unprotected config. You can edit its fields, share the file, or delete it."
                 }
@@ -162,6 +164,17 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
             activity.disconnectConfigFile()
             return
         }
+
+        // إلا كان هاد الملف بالضبط هو ديجا الكونفيغ المحمل عند
+        // MainActivity (activeConfigFileName + SAVED_CONFIG) - سواء بقا
+        // محمل من نفس الجلسة، أو تسترجع من SecureConfigStore/
+        // XraySecureConfigStore عند إعادة فتح التطبيق (حتى بعد ما
+        // process تقتل بالكامل، شوف MainActivity.onCreate) - كنشغلوه
+        // مباشرة بلا ما نعاودو نقرا/نفكو الملف من القرص، وبلا password.
+        // هادشي كيغطي بالضبط الحالة لي كان فيها UnlockedConfigCache
+        // (فارغة بعد process kill) كتخلي password يتطلب بلا داعي رغم
+        // أن MainActivity ديجا عندها نفس الكونفيغ محفوظ محليا.
+        if (activity.startIfAlreadyLoaded(entry.displayName)) return
 
         lifecycleScope.launch {
             val bytes = withContext(Dispatchers.IO) { ConfigStorageManager.readBytes(ctx, entry.uri) }
@@ -220,6 +233,16 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
 
     private fun editEntry(entry: ConfigFileEntry) {
         val ctx = context ?: return
+        if (entry.isEncrypted) {
+            val cached = UnlockedConfigCache.get(entry.displayName)
+            if (cached != null) {
+                (requireActivity() as? MainActivity)?.loadFieldsForEditing(entry.displayName, cached)
+                Toast.makeText(ctx, "Loaded into SSH SETTINGS for editing. Use + NEW CONFIG to save your changes.", Toast.LENGTH_LONG).show()
+            } else {
+                promptPasswordForEdit(entry)
+            }
+            return
+        }
         lifecycleScope.launch {
             val bytes = withContext(Dispatchers.IO) { ConfigStorageManager.readBytes(ctx, entry.uri) }
             if (bytes == null) {
@@ -234,6 +257,41 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
                 Toast.makeText(ctx, "Could not load config for editing.", Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    /** بحال promptPasswordAndConnect لكن الهدف Edit ماشي Connect - نفس UnlockedConfigCache. */
+    private fun promptPasswordForEdit(entry: ConfigFileEntry) {
+        val ctx = context ?: return
+        val input = EditText(ctx).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            hint = "Password"
+        }
+        AlertDialog.Builder(ctx)
+            .setTitle("Protected Config")
+            .setMessage("Enter the password to edit this config.")
+            .setView(wrapDialogInput(input))
+            .setPositiveButton("Continue") { _, _ ->
+                val password = input.text.toString()
+                lifecycleScope.launch {
+                    val bytes = withContext(Dispatchers.IO) { ConfigStorageManager.readBytes(ctx, entry.uri) }
+                    if (bytes == null) {
+                        Toast.makeText(ctx, "Could not read file.", Toast.LENGTH_SHORT).show()
+                        return@launch
+                    }
+                    try {
+                        val parsed = withContext(Dispatchers.Default) { MlConfigFile.parse(bytes, password) }
+                        UnlockedConfigCache.put(entry.displayName, parsed.fields)
+                        (requireActivity() as? MainActivity)?.loadFieldsForEditing(entry.displayName, parsed.fields)
+                        Toast.makeText(ctx, "Loaded into SSH SETTINGS for editing. Use + NEW CONFIG to save your changes.", Toast.LENGTH_LONG).show()
+                    } catch (_: MlConfigParseException) {
+                        Toast.makeText(ctx, "Wrong password.", Toast.LENGTH_SHORT).show()
+                    } catch (_: Throwable) {
+                        Toast.makeText(ctx, "Wrong password.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun confirmDelete(entry: ConfigFileEntry) {
