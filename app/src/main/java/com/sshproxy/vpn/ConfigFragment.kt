@@ -3,6 +3,7 @@ package com.sshproxy.vpn
 import android.content.Intent
 import android.os.Bundle
 import android.text.InputType
+import android.view.DragEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.EditText
@@ -19,6 +20,7 @@ import com.sshproxy.vpn.importer.MlConfigParseException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 
 /**
  * تبويب CONFIG: لائحة كل ملفات .ml المحفوظة فـ Downloads/MR VPN TUNNEL.
@@ -27,6 +29,13 @@ import kotlinx.coroutines.withContext
  * disconnectConfigFile). الضغط على جسم الصف كيبين/كيخبي لوحة موسعة
  * (Info + Edit/Share/Delete) فنفس المكان - بلا Dialog وبلا تبديل تبويب.
  * إنشاء كونفيغ جديد صار من زر "+ NEW CONFIG" فـ SSH SETTINGS، ماشي من هنا.
+ *
+ * الضغط الطويل على جسم الصف كيبدا سحب (Drag & Drop) باش المستخدم يقدر
+ * يرتب الملفات بيدو (مفيد بزاف ملي كيتزادو بزاف ملفات) - شوف
+ * setupDragAndDrop/persistCurrentOrder/applySavedOrder تحت. الترتيب
+ * كيتحفظ فـSharedPreferences محلية (ماشي فالملفات نفسهم)، وكيبقى محفوظ
+ * حتى بعد إغلاق التطبيق. ملفات جداد (بلا ترتيب مسجل بعد) كيبانو فالأعلى
+ * بشكل طبيعي، بحال السلوك الافتراضي القديم (الأحدث فوق).
  */
 class ConfigFragment : Fragment(R.layout.fragment_config) {
 
@@ -39,12 +48,17 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
     private val rowViews = mutableMapOf<String, View>()
     private val expandedNames = mutableSetOf<String>()
 
+    // ===== Drag & Drop (ترتيب يدوي بالضغط الطويل) =====
+    private var draggedRow: View? = null
+    private var draggedName: String? = null
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         llConfigList = view.findViewById(R.id.llConfigList)
         txtConfigEmpty = view.findViewById(R.id.txtConfigEmpty)
 
         (requireActivity() as? MainActivity)?.onConfigFragmentReady(this)
+        setupDragAndDrop()
         refreshList()
     }
 
@@ -54,10 +68,11 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
         lifecycleScope.launch {
             val entries = withContext(Dispatchers.IO) { ConfigStorageManager.list(ctx) }
             if (!isAdded) return@launch
+            val ordered = applySavedOrder(entries)
             llConfigList.removeAllViews()
             rowViews.clear()
-            txtConfigEmpty.visibility = if (entries.isEmpty()) View.VISIBLE else View.GONE
-            for (entry in entries) {
+            txtConfigEmpty.visibility = if (ordered.isEmpty()) View.VISIBLE else View.GONE
+            for (entry in ordered) {
                 val row = buildRow(entry)
                 rowViews[entry.displayName] = row
                 llConfigList.addView(row)
@@ -144,11 +159,113 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
             }
         }
 
+        // الضغط الطويل على جسم الصف كيبدا سحب لترتيب الملفات - نفس المبدأ
+        // ديال "long press to reorder" فمعظم التطبيقات (بحال WhatsApp/
+        // Play Music). ماكيتعارضش مع rowCard.setOnClickListener فوق
+        // (توسيع اللوحة) - Android كيدير الفرق بين tap عادي وlong press
+        // تلقائيا (الحدث كيتلقى غير واحد منهم حسب مدة الضغط).
+        rowCard.setOnLongClickListener {
+            draggedRow = row
+            draggedName = entry.displayName
+            val shadow = View.DragShadowBuilder(row)
+            row.alpha = 0.35f
+            row.startDragAndDrop(null, shadow, entry.displayName, 0)
+            true
+        }
+
         btnEdit.setOnClickListener { editEntry(entry) }
         btnShare.setOnClickListener { shareEntry(entry) }
         btnDelete.setOnClickListener { confirmDelete(entry) }
 
         return row
+    }
+
+    // ===== Drag & Drop: تحريك الصف حي فوسط llConfigList، وحفظ الترتيب =====
+
+    private fun setupDragAndDrop() {
+        llConfigList.setOnDragListener { _, event ->
+            when (event.action) {
+                DragEvent.ACTION_DRAG_STARTED -> true
+                DragEvent.ACTION_DRAG_LOCATION -> {
+                    handleDragLocation(event.y)
+                    true
+                }
+                DragEvent.ACTION_DROP -> true
+                DragEvent.ACTION_DRAG_ENDED -> {
+                    draggedRow?.alpha = 1f
+                    draggedRow = null
+                    draggedName = null
+                    persistCurrentOrder()
+                    true
+                }
+                else -> true
+            }
+        }
+    }
+
+    /**
+     * كل ما تحرك الإصبع فوق llConfigList أثناء السحب، كنشوفو فين خاص
+     * الصف المسحوب يتحرك (حسب منتصف كل صف آخر مقارنة بموقع الإصبع Y)،
+     * وكنعاودو نرتبوه هناك مباشرة - هادشي كيعطي إحساس "حي" للترتيب
+     * (بحال RecyclerView + ItemTouchHelper، لكن يدويا لأن llConfigList
+     * هي LinearLayout عادية).
+     */
+    private fun handleDragLocation(y: Float) {
+        val dragged = draggedRow ?: return
+        val currentIndex = llConfigList.indexOfChild(dragged)
+        if (currentIndex == -1) return
+        var targetIndex = llConfigList.childCount - 1
+        for (i in 0 until llConfigList.childCount) {
+            val child = llConfigList.getChildAt(i)
+            if (child == dragged) continue
+            val mid = (child.top + child.bottom) / 2f
+            if (y < mid) {
+                targetIndex = i
+                break
+            }
+        }
+        if (targetIndex != currentIndex) {
+            llConfigList.removeView(dragged)
+            val adjusted = if (targetIndex > currentIndex) targetIndex - 1 else targetIndex
+            llConfigList.addView(dragged, adjusted.coerceIn(0, llConfigList.childCount))
+        }
+    }
+
+    private fun configOrderPrefs() = requireContext().getSharedPreferences("config_order_prefs", 0)
+
+    /** كيسجل الترتيب البصري الحالي ديال llConfigList (لائحة الأسماء بالترتيب) - كيتقرا مرة أخرى فـapplySavedOrder(). */
+    private fun persistCurrentOrder() {
+        val nameByView = rowViews.entries.associate { (name, view) -> view to name }
+        val names = (0 until llConfigList.childCount).mapNotNull { i -> nameByView[llConfigList.getChildAt(i)] }
+        if (names.isEmpty()) return
+        val arr = JSONArray(names)
+        configOrderPrefs().edit().putString("order", arr.toString()).apply()
+    }
+
+    private fun loadSavedOrder(): List<String> {
+        val raw = configOrderPrefs().getString("order", null) ?: return emptyList()
+        return try {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).map { arr.getString(it) }
+        } catch (_: Throwable) {
+            emptyList()
+        }
+    }
+
+    /**
+     * كيرتب entries حسب آخر ترتيب سجله المستخدم بيدو (Drag & Drop) - أي
+     * ملف جديد ماكاينش بعد فالترتيب المسجل (تزاد من بعد آخر مرة رتب فيها
+     * المستخدم) كيبان فالأعلى، بنفس ترتيب "الأحدث فوق" الافتراضي القديم
+     * ديال ConfigStorageManager.list().
+     */
+    private fun applySavedOrder(entries: List<ConfigFileEntry>): List<ConfigFileEntry> {
+        val savedOrder = loadSavedOrder()
+        if (savedOrder.isEmpty()) return entries
+        val byName = entries.associateBy { it.displayName }
+        val known = savedOrder.mapNotNull { byName[it] }
+        val knownNames = known.map { it.displayName }.toSet()
+        val unknown = entries.filter { it.displayName !in knownNames }
+        return unknown + known
     }
 
     // ===== زر ★/■: بدء/وقف الاتصال بهاد الكونفيغ بالضبط، بلا مغادرة CONFIG tab =====
