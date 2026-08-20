@@ -1,16 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <path
-        android:fillColor="#1DB954"
-        android:pathData="M54,20 L80,34 L80,58 C80,76 68,88 54,92 C40,88 28,76 28,58 L28,34 Z" />
-    <path
-        android:pathData="M46,54 L52,62 L64,44"
-        android:strokeColor="#0F1115"
-        android:strokeWidth="6"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
-</vector>
+<!--
+    Foreground الأصلي كان شعار vector بسيط - بدلناه بصورة MR VPN TUNNEL
+    الجديدة (drawable-nodpi/ic_launcher_foreground_img.png) عبر <bitmap>.
+    android:gravity="center" باش الصورة تتوسط داخل الـsafe zone ديال
+    Adaptive Icon (108x108dp) بلا تشويه فالأبعاد.
+-->
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+    android:src="@drawable/ic_launcher_foreground_img"
+    android:gravity="center" />
