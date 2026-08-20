@@ -1231,7 +1231,7 @@ class SshVpnService : VpnService() {
         // فـwhile loop اللي كان كيفيق الـCPU مرارًا طول مدة الـtimeout.
         val completionService = java.util.concurrent.ExecutorCompletionService<Boolean>(latencyProbeExecutor)
         val submitted = connectivityProbeUrls.map { probe ->
-            completionService.submit<Boolean> {
+            completionService.submit {
                 try {
                     val url = java.net.URL(probe)
                     val conn = url.openConnection(proxy) as java.net.HttpURLConnection
