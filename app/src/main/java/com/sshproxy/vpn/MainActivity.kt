@@ -1150,7 +1150,18 @@ class MainActivity : AppCompatActivity() {
     fun connectConfigFile(displayName: String, fields: Map<String, Any?>, isProtected: Boolean) {
         // Config واحد فقط مسموح فنفس الوقت: إلا كان فيه اتصال/محاولة اتصال
         // جارية بملف آخر، نقطعوها أولا قبل ما نبداو هاد الملف الجديد.
-        if ((connected || connecting) && activeConfigFileName != displayName) {
+        //
+        // SshVpnService كتخدم فـprocess منفصل (:vpnproc)، وstopVpn() كتدير
+        // Process.killProcess() بـdelay ديال 300ms (باش Xray/hev-socks5
+        // يتنظفو بأمان قبل القتل - شوف SshVpnService.stopVpn()). إلا
+        // درنا tryConnect() مباشرة بعد disconnect() بلا نستناو، الاتصال
+        // الجديد كيبدا فنفس الـprocess القديمة، وملي توصل الـ300ms،
+        // killProcess() (المجدولة من الـdisconnect القديم) كتقتل الاتصال
+        // الجديد معاها. هادشي كان كيخلي أول ضغطة تدير غير قطع الاتصال
+        // القديم بلا ما تكمل تتصل بالجديد - وخصنا ضغطة ثانية باش يخدم.
+        // الحل: نستناو أكثر من 300ms (400ms) قبل ما نبداو tryConnect().
+        val needsDisconnectFirst = (connected || connecting) && activeConfigFileName != displayName
+        if (needsDisconnectFirst) {
             disconnect()
         }
 
@@ -1162,6 +1173,18 @@ class MainActivity : AppCompatActivity() {
         persistLastSavedConfigFileName(displayName)
         persistImportedConfigActive(false)
         updateImportUiState()
+        if (needsDisconnectFirst) {
+            lifecycleScope.launch {
+                delay(400)
+                try {
+                    if (!connected && !connecting) tryConnect()
+                } catch (e: Throwable) {
+                    appendLog("ERROR: ${e.javaClass.simpleName}: ${e.message ?: "Unknown error"}")
+                }
+                configFragment?.updateActiveVisuals(activeConfigFileName, connected, connecting)
+            }
+            return
+        }
         try {
             if (!connected && !connecting) tryConnect()
         } catch (e: Throwable) {
