@@ -1213,40 +1213,55 @@ class SshVpnService : VpnService() {
         "http://www.msftconnecttest.com/connecttest.txt"
     )
 
+    // شير executor واحد لكل الـpings (بدل ما نخلقو thread pool جديد ونمُوّتو
+    // فكل نداء لـcheckTunnelLatencyMs). هاد الدالة كتندادى كل 5-6 ثواني بلا
+    // ماتوقف طول ما الـVPN شغال - كانت كتخلق 3 threads جداد وتسدهم فكل
+    // مرة (churn تقيل على GC/CPU باستمرار). داباهي threads ثابتين، كيتبنيو
+    // مرة وحدة وكيتقادو غير عند stopVpn/onDestroy.
+    private val latencyProbeExecutor by lazy {
+        java.util.concurrent.Executors.newFixedThreadPool(connectivityProbeUrls.size)
+    }
+
     /** Same check as [verifyTunnelConnectivity] but returns the round-trip time in ms (null on failure), so the user can see connection speed in the log. Runs all probes in parallel and returns as soon as the first one succeeds, instead of waiting on each sequentially (which could take up to timeoutMs * probe count). */
     private fun checkTunnelLatencyMs(timeoutMs: Int = 5000): Int? {
         val start = System.currentTimeMillis()
         val proxy = java.net.Proxy(java.net.Proxy.Type.SOCKS, java.net.InetSocketAddress("127.0.0.1", socksPort))
-        val executor = java.util.concurrent.Executors.newFixedThreadPool(connectivityProbeUrls.size)
-        try {
-            val futures = connectivityProbeUrls.map { probe ->
-                executor.submit<Boolean> {
-                    try {
-                        val url = java.net.URL(probe)
-                        val conn = url.openConnection(proxy) as java.net.HttpURLConnection
-                        conn.connectTimeout = timeoutMs
-                        conn.readTimeout = timeoutMs
-                        val code = conn.responseCode
-                        conn.disconnect()
-                        code in 200..299
-                    } catch (_: Throwable) {
-                        false
-                    }
+        // completionService كيعطينا get() اللي كيبلوكي (real wait، ماشي
+        // busy-poll) حتى يكمل أول probe - بلا ماندوزو بالـThread.sleep(20)
+        // فـwhile loop اللي كان كيفيق الـCPU مرارًا طول مدة الـtimeout.
+        val completionService = java.util.concurrent.ExecutorCompletionService<Boolean>(latencyProbeExecutor)
+        val submitted = connectivityProbeUrls.map { probe ->
+            completionService.submit<Boolean> {
+                try {
+                    val url = java.net.URL(probe)
+                    val conn = url.openConnection(proxy) as java.net.HttpURLConnection
+                    conn.connectTimeout = timeoutMs
+                    conn.readTimeout = timeoutMs
+                    val code = conn.responseCode
+                    conn.disconnect()
+                    code in 200..299
+                } catch (_: Throwable) {
+                    false
                 }
             }
-            // Bounded overall by ~timeoutMs (all probes run at once), not
-            // timeoutMs * number of probes like a sequential loop would be.
+        }
+        try {
+            var remaining = submitted.size
             val deadline = start + timeoutMs + 500
-            while (System.currentTimeMillis() < deadline) {
-                if (futures.any { it.isDone && it.get() == true }) {
-                    return (System.currentTimeMillis() - start).toInt()
-                }
-                if (futures.all { it.isDone }) break
-                Thread.sleep(20)
+            while (remaining > 0) {
+                val waitMs = deadline - System.currentTimeMillis()
+                if (waitMs <= 0) break
+                val done = completionService.poll(waitMs, java.util.concurrent.TimeUnit.MILLISECONDS) ?: break
+                remaining--
+                val ok = try { done.get() == true } catch (_: Exception) { false }
+                if (ok) return (System.currentTimeMillis() - start).toInt()
             }
             return null
         } finally {
-            executor.shutdownNow()
+            // ماكنسدوش الـexecutor هنا - غير الطلبات الفاضية اللي بقاو
+            // معلقين (probe ماكملش قبل الـdeadline)؛ الـexecutor بحالو
+            // شير و باقي خدام للـpings الجايين.
+            submitted.forEach { if (!it.isDone) it.cancel(true) }
         }
     }
 
@@ -1615,7 +1630,11 @@ class SshVpnService : VpnService() {
 
         speedMonitorJob = scope.launch {
             while (isActive) {
-                delay(1000)
+                // بدلات من 1000 لـ3000: خصنا نبنيو Notification جديدة (allocation)
+                // ونديرو IPC (binder) لـNotificationManager كل مرة - مرة فالثانية
+                // طول مدة الاتصال كانت كتحرق باتري بلا فائدة كبيرة، حيت سرعة
+                // التحميل ماخاصهاش تتبدل بهاد السرعة باش تبان للمستخدم.
+                delay(3000)
                 val now = System.currentTimeMillis()
                 val rx = TrafficStats.getUidRxBytes(uid)
                 val tx = TrafficStats.getUidTxBytes(uid)
@@ -1648,6 +1667,8 @@ class SshVpnService : VpnService() {
         speedMonitorJob = null
     }
 
+    private var lastNotifText: String? = null
+
     private fun updateNotification(state: String, speedText: String? = null) {
         // DISCONNECTED means the foreground notification is about to be
         // removed anyway (stopVpn already calls stopForeground) - no need to
@@ -1659,6 +1680,11 @@ class SshVpnService : VpnService() {
             } else {
                 notificationTextFor(state)
             }
+            // ماكنبنيوش Notification جديدة ولا كنديرو notify() (binder IPC)
+            // إلا كان النص فعلا تبدل - كنجنبو allocation + IPC بلا فائدة
+            // ملي السرعة كتبقى صفر (بلا تصفح) أو نفس القيمة.
+            if (text == lastNotifText) return
+            lastNotifText = text
             val notif = NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("MR VPN TUNNEL")
                 .setContentText(text)
@@ -1677,9 +1703,11 @@ class SshVpnService : VpnService() {
             val nm = getSystemService(NotificationManager::class.java)
             nm.createNotificationChannel(channel)
         }
+        val initialText = notificationTextFor(STATE_CONNECTING)
+        lastNotifText = initialText
         val notif = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("MR VPN TUNNEL")
-            .setContentText(notificationTextFor(STATE_CONNECTING))
+            .setContentText(initialText)
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setContentIntent(buildContentIntent())
             .setOngoing(true)
@@ -1692,6 +1720,8 @@ class SshVpnService : VpnService() {
         try { networkCallback?.let { connectivityManager?.unregisterNetworkCallback(it) } } catch (_: Throwable) { }
         reconnectDebounceJob?.cancel()
         scope.cancel()
+        try { latencyProbeExecutor.shutdownNow() } catch (_: Throwable) { }
+        try { FileLogger.close() } catch (_: Throwable) { }
         super.onDestroy()
     }
 
