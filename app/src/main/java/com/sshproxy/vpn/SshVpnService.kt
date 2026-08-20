@@ -16,6 +16,7 @@ import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.os.Process
 import android.os.SystemClock
+import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
 import androidx.core.app.NotificationCompat
 import com.jcraft.jsch.JSch
@@ -1430,6 +1431,34 @@ class SshVpnService : VpnService() {
     }
 
     /**
+     * نفس getActiveDataCarrierName() ديال MainActivity.kt - كيرجع اسم
+     * الأوبراتور الصحيح ديال الـSIM اللي فعلا كيدير بيانات الهاتف (dual-SIM)
+     * بدل ما يبقى دايما يرجع لـSIM الافتراضي. كترجع null إلا ماكانش
+     * ممكن (permission، جهاز SIM واحد، إلخ) - فهاد الحالة الكود كيرجع
+     * تلقائيا للطريقة القديمة.
+     */
+    private fun getActiveDataCarrierName(baseTm: TelephonyManager?): String? {
+        if (baseTm == null) return null
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return null
+        return try {
+            val sm = getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as? SubscriptionManager
+                ?: return null
+            val subId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                sm.activeDataSubscriptionId
+            } else {
+                @Suppress("DEPRECATION")
+                SubscriptionManager.getDefaultDataSubscriptionId()
+            }
+            if (subId == SubscriptionManager.INVALID_SUBSCRIPTION_ID) return null
+            baseTm.createForSubscriptionId(subId).networkOperatorName?.takeIf { it.isNotBlank() }
+        } catch (_: SecurityException) {
+            null
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    /**
      * كيبين معلومات الجهاز والشبكة مرة وحدة فبداية كل محاولة اتصال -
      * بحال HTTP Custom (اسم/موديل الجهاز، نسخة Android، اسم الشبكة/الـ
      * IP المحلي). Best-effort بحتة: أي خطأ هنا ماخصوش يوقف الاتصال.
@@ -1452,8 +1481,13 @@ class SshVpnService : VpnService() {
                 caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> {
                     // getNetworkOperatorName() ماخصهاش أي permission خاص -
                     // كتعطي اسم الشبكة (بحال "Maroc Telecom") من الـSIM.
+                    // كنجربو أولا نجيبو اسم الأوبراتور ديال الـSIM اللي
+                    // فعلا كيدير Data (dual-SIM) - وإلا ما قدرناش، نرجعو
+                    // للطريقة القديمة (SIM الافتراضي).
                     val tm = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
-                    val carrier = tm?.networkOperatorName?.takeIf { it.isNotBlank() } ?: "Mobile"
+                    val carrier = getActiveDataCarrierName(tm)
+                        ?: tm?.networkOperatorName?.takeIf { it.isNotBlank() }
+                        ?: "Mobile"
                     "$carrier / Mobile Data"
                 }
                 caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
