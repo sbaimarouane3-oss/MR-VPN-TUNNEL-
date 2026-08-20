@@ -1441,14 +1441,8 @@ class SshVpnService : VpnService() {
         if (baseTm == null) return null
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return null
         return try {
-            val sm = getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as? SubscriptionManager
-                ?: return null
-            val subId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                sm.activeDataSubscriptionId
-            } else {
-                @Suppress("DEPRECATION")
-                SubscriptionManager.getDefaultDataSubscriptionId()
-            }
+            @Suppress("DEPRECATION")
+            val subId = SubscriptionManager.getDefaultDataSubscriptionId()
             if (subId == SubscriptionManager.INVALID_SUBSCRIPTION_ID) return null
             baseTm.createForSubscriptionId(subId).networkOperatorName?.takeIf { it.isNotBlank() }
         } catch (_: SecurityException) {
