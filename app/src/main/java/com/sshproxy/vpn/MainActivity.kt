@@ -5,14 +5,16 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.net.VpnService
 import android.os.Build
-import android.telephony.TelephonyManager
 import android.os.Bundle
+import android.telephony.SubscriptionManager
+import android.telephony.TelephonyManager
 import android.view.View
 import android.view.animation.LinearInterpolator
 import android.widget.EditText
@@ -24,6 +26,7 @@ import com.google.android.material.button.MaterialButton
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -222,6 +225,15 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.RequestPermission()
     ) { }
 
+    // باش نعرفو اسم الأوبراتور الصحيح ديال الـSIM اللي فعلا كيدير بيانات
+    // الهاتف (dual-SIM) بدل ما نبقاو دايما نرجعو لـSIM الافتراضي - نفس
+    // أسلوب notifPermLauncher: كنطلبوها مرة واحدة عند فتح التطبيق، وإلا
+    // رفضها المستخدم، getActiveDataCarrierName() كترجع null والكود
+    // كيرجع تلقائيا للطريقة القديمة (tm.networkOperatorName) بلا مشكل.
+    private val phoneStatePermLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
+
     private val logReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             lifecycleScope.launch { refreshLogIfChanged() }
@@ -329,6 +341,11 @@ class MainActivity : AppCompatActivity() {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             notifPermLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_PHONE_STATE)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            phoneStatePermLauncher.launch(android.Manifest.permission.READ_PHONE_STATE)
         }
 
         val filter = IntentFilter(SshVpnService.ACTION_LOG)
@@ -2415,6 +2432,40 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * كيرجع اسم الأوبراتور الصحيح ديال الـSIM اللي فعلا كيدير بيانات
+     * الهاتف (Mobile Data) - ماشي الـSIM الافتراضي/الأول. فهاتف بـ2 SIM
+     * (dual-SIM)، الطريقة العادية tm.networkOperatorName كترجع دايما
+     * اسم الأوبراتور ديال SIM1 حتى إلا كان SIM2 هو المفعل عليه Data -
+     * هاد الدالة كتصحح هاد المشكل عبر SubscriptionManager.getActiveDataSubscriptionId()
+     * (API 30+) أو SubscriptionManager.getDefaultDataSubscriptionId()
+     * (كـfallback فـAPI 24-29)، وبعدين TelephonyManager.createForSubscriptionId()
+     * باش نجيبو اسم الأوبراتور المرتبط فعلا بهاد الـSIM.
+     * كترجع null إلا: الجهاز SIM واحد فقط، الـpermission (READ_PHONE_STATE)
+     * ماعطاهاش المستخدم، ولا أي خطأ آخر - فهاد الحالة الكود لي كيستدعيها
+     * كيرجع تلقائيا للطريقة القديمة (tm.networkOperatorName) بلا مشكل.
+     */
+    private fun getActiveDataCarrierName(baseTm: TelephonyManager?): String? {
+        if (baseTm == null) return null
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return null
+        return try {
+            val sm = getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as? SubscriptionManager
+                ?: return null
+            val subId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                sm.activeDataSubscriptionId
+            } else {
+                @Suppress("DEPRECATION")
+                SubscriptionManager.getDefaultDataSubscriptionId()
+            }
+            if (subId == SubscriptionManager.INVALID_SUBSCRIPTION_ID) return null
+            baseTm.createForSubscriptionId(subId).networkOperatorName?.takeIf { it.isNotBlank() }
+        } catch (_: SecurityException) {
+            null
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    /**
      * كيبين معلومات الجهاز والشبكة مرة وحدة عند فتح التطبيق (بحال
      * SshVpnService.logDeviceAndNetworkInfo() لي كيدير نفسها عند كل
      * محاولة اتصال) - باش تبان فاللوق حتى قبل ما المستخدم يدوس Connect،
@@ -2442,7 +2493,9 @@ class MainActivity : AppCompatActivity() {
                 caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
                 caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> {
                     val tm = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
-                    val carrier = tm?.networkOperatorName?.takeIf { it.isNotBlank() } ?: "Mobile"
+                    val carrier = getActiveDataCarrierName(tm)
+                        ?: tm?.networkOperatorName?.takeIf { it.isNotBlank() }
+                        ?: "Mobile"
                     "$carrier / Mobile Data"
                 }
                 caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
