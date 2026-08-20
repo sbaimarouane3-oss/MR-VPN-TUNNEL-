@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    دايالوگ "Choose Protocol": نفس أسلوب dialog_import.xml (Card بحواف
+    مدورة، خلفية شفافة للنافذة كتنعمر من الكود). القائمة (llProtocolList)
+    فارغة هنا بالكامل - كتتعمر ديناميكيا فـMainActivity.showProtocolPicker()
+    بصف item_protocol_choice.xml واحد لكل عنصر فـPROTOCOL_OPTIONS، فبروتوكول
+    جديد يتزاد فاللائحة كافي باش يبان هنا بلا أي تعديل فهاد الـlayout.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/shape_dialog_bg"
+    android:paddingTop="20dp"
+    android:paddingBottom="8dp">
+
+    <!-- Header: أيقونة درع + عنوان + زر إغلاق X -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="20dp"
+        android:paddingEnd="12dp">
+
+        <ImageView
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:src="@drawable/ic_shield_outline"
+            android:importantForAccessibility="no" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="10dp"
+            android:text="Choose Protocol"
+            android:textColor="@color/text_primary"
+            android:textSize="19sp"
+            android:textStyle="bold" />
+
+        <ImageView
+            android:id="@+id/btnProtocolClose"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:padding="8dp"
+            android:src="@drawable/ic_close"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Close" />
+
+    </LinearLayout>
+
+    <!-- القائمة القابلة للتمرير - كتتعمر ديناميكيا من الكود -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="420dp"
+        android:layout_marginTop="14dp"
+        android:scrollbars="vertical"
+        android:fillViewport="false">
+
+        <LinearLayout
+            android:id="@+id/llProtocolList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp" />
+
+    </ScrollView>
+
+    <!-- فاصل رفيع + زر CANCEL -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="4dp"
+        android:background="@color/surface_stroke" />
+
+    <TextView
+        android:id="@+id/btnProtocolCancel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end"
+        android:layout_marginTop="4dp"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="14dp"
+        android:paddingBottom="14dp"
+        android:text="CANCEL"
+        android:textColor="@color/accent_green"
+        android:textStyle="bold"
+        android:textSize="14sp"
+        android:clickable="true"
+        android:focusable="true"
+        android:background="?attr/selectableItemBackground" />
+
+</LinearLayout>
