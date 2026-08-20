@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Foreground الأصلي كان شعار vector بسيط - بدلناه بصورة MR VPN TUNNEL
+    الجديدة (drawable-nodpi/ic_launcher_foreground_img.png) عبر <bitmap>.
+    android:gravity="center" باش الصورة تتوسط داخل الـsafe zone ديال
+    Adaptive Icon (108x108dp) بلا تشويه فالأبعاد.
+-->
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+    android:src="@drawable/ic_launcher_foreground_img"
+    android:gravity="center" />
