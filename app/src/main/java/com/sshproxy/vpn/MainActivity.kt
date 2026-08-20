@@ -786,10 +786,13 @@ class MainActivity : AppCompatActivity() {
                         Toast.makeText(this@MainActivity, "Could not save config.", Toast.LENGTH_SHORT).show()
                         return@launch
                     }
-                    val (_, savedName) = saved
+                    // saved.first = Uri, saved.second = اسم الملف المحفوظ - ماخصناش
+                    // حتى واحد منهم هنا، الحفظ كافي.
                     findViewById<ViewPager2>(R.id.viewPager).currentItem = 1
                     configFragment?.refreshList()
-                    connectConfigFile(savedName, parsed.fields, isProtected = false)
+                    // نحفظو الملف فقط - بلا اتصال تلقائي. المستخدم خاصو
+                    // يضغط Connect بيدو (من CONFIG tab ولا SSH SETTINGS)،
+                    // بحال بالضبط الملفات لي كتنحفظ من "+ NEW CONFIG".
                 }
             } catch (_: Throwable) {
                 Toast.makeText(this@MainActivity, "Invalid or corrupted MR VPN TUNNEL config file.", Toast.LENGTH_SHORT).show()
@@ -814,7 +817,7 @@ class MainActivity : AppCompatActivity() {
         }
         AlertDialog.Builder(this)
             .setTitle("Protected Config")
-            .setMessage("This config is password protected. Enter the password to open and connect (you'll only need to enter it once this session).")
+            .setMessage("This config is password protected. Enter the password to save it (you'll only need to enter it once this session).")
             .setView(input)
             .setPositiveButton("Open") { _, _ ->
                 val password = input.text.toString()
@@ -833,7 +836,11 @@ class MainActivity : AppCompatActivity() {
                         UnlockedConfigCache.put(savedName, parsed.fields)
                         findViewById<ViewPager2>(R.id.viewPager).currentItem = 1
                         configFragment?.refreshList()
-                        connectConfigFile(savedName, parsed.fields, isProtected = true)
+                        // نحفظو الملف فقط - بلا اتصال تلقائي. كلمة السر
+                        // بقات محفوظة فـUnlockedConfigCache لهاد الجلسة
+                        // (بحال ما كان موعود فالـdialog) - ملي المستخدم
+                        // يضغط على الملف من CONFIG tab باش يتصل، ماغاديش
+                        // يطلب منو كلمة السر مرة ثانية.
                     } catch (_: MlConfigParseException) {
                         Toast.makeText(this@MainActivity, "Wrong password.", Toast.LENGTH_SHORT).show()
                     } catch (_: Throwable) {
