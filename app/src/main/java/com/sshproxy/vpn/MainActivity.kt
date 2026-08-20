@@ -13,11 +13,8 @@ import android.net.VpnService
 import android.os.Build
 import android.telephony.TelephonyManager
 import android.os.Bundle
-import android.view.LayoutInflater
 import android.view.View
-import android.view.ViewGroup
 import android.view.animation.LinearInterpolator
-import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -77,28 +74,74 @@ private data class ProtocolOption(
     // V2Ray: كيبين حقل JSON كبير بدل حقول SSH (Host/User/Pass/Payload/SSL).
     val isV2Ray: Boolean = false,
     // Shadowsocks: كيبين حقول Server/Port/Method/Password/UDP بدل حقول SSH.
-    val isShadowsocks: Boolean = false
+    val isShadowsocks: Boolean = false,
+    // وصف قصير كيبان تحت الاسم فـ"Choose Protocol" dialog (UI فقط، ماعندوش
+    // تأثير على منطق الاتصال).
+    val description: String = "",
+    // أيقونة الصف فـ"Choose Protocol" dialog (UI فقط). إلا زدنا بروتوكول
+    // جديد بلا أيقونة خاصة، كيرجع تلقائيا لقفل بسيط (ic_protocol_lock).
+    val iconRes: Int = R.drawable.ic_protocol_lock
 )
 
+/**
+ * مصدر وحيد للحقيقة ديال كل بروتوكول قابل للاختيار - "Choose Protocol"
+ * dialog (showProtocolPicker) كيبني القائمة ديالو ديناميكيا مباشرة من هاد
+ * اللائحة (صف واحد لكل عنصر)، فبروتوكول جديد يتزاد هنا فقط (label + أعلام
+ * المنطق + description + iconRes اختياريين) كافي باش يبان تلقائيا فالـUI
+ * بلا أي تعديل آخر فـdialog_choose_protocol.xml ولا فـshowProtocolPicker().
+ */
 private val PROTOCOL_OPTIONS = listOf(
-    ProtocolOption("SSH-Direct", usePayload = false, useSsl = false, useProxy = false),
-    ProtocolOption("SSH-Proxy", usePayload = false, useSsl = false, useProxy = true),
-    ProtocolOption("SSH-Payload", usePayload = true, useSsl = false, useProxy = false),
-    ProtocolOption("SSH-Proxy-Payload", usePayload = true, useSsl = false, useProxy = true),
-    ProtocolOption("SSH-TLS", usePayload = false, useSsl = true, useProxy = false),
-    ProtocolOption("SSH-TLS-Proxy", usePayload = false, useSsl = true, useProxy = true),
-    ProtocolOption("SSH-TLS-Payload", usePayload = true, useSsl = true, useProxy = false),
-    ProtocolOption("SSH-TLS-Proxy-Payload", usePayload = true, useSsl = true, useProxy = true),
+    ProtocolOption(
+        "SSH-Direct", usePayload = false, useSsl = false, useProxy = false,
+        description = "Direct SSH connection", iconRes = R.drawable.ic_protocol_lock
+    ),
+    ProtocolOption(
+        "SSH-Proxy", usePayload = false, useSsl = false, useProxy = true,
+        description = "SSH via proxy", iconRes = R.drawable.ic_protocol_lock
+    ),
+    ProtocolOption(
+        "SSH-Payload", usePayload = true, useSsl = false, useProxy = false,
+        description = "SSH with payload", iconRes = R.drawable.ic_protocol_lock
+    ),
+    ProtocolOption(
+        "SSH-Proxy-Payload", usePayload = true, useSsl = false, useProxy = true,
+        description = "SSH via proxy with payload", iconRes = R.drawable.ic_protocol_lock
+    ),
+    ProtocolOption(
+        "SSH-TLS", usePayload = false, useSsl = true, useProxy = false,
+        description = "SSH over TLS", iconRes = R.drawable.ic_protocol_lock_shield
+    ),
+    ProtocolOption(
+        "SSH-TLS-Proxy", usePayload = false, useSsl = true, useProxy = true,
+        description = "SSH over TLS via proxy", iconRes = R.drawable.ic_protocol_lock_shield
+    ),
+    ProtocolOption(
+        "SSH-TLS-Payload", usePayload = true, useSsl = true, useProxy = false,
+        description = "SSH over TLS with payload", iconRes = R.drawable.ic_protocol_lock_shield
+    ),
+    ProtocolOption(
+        "SSH-TLS-Proxy-Payload", usePayload = true, useSsl = true, useProxy = true,
+        description = "SSH over TLS via proxy with payload", iconRes = R.drawable.ic_protocol_lock_shield
+    ),
     // XTRA: يدوي لـ VLESS+TCP (+TLS إلا تعمرت SNI) - نفس حقول SSH-TLS
     // بالضبط (Host:Port, Username/UUID, Password, SNI)، بلا Payload
     // وبلا Proxy. ماشي عبر Import - القيم كتبنى مباشرة فـstartVpnService.
-    ProtocolOption("XTRA", usePayload = false, useSsl = true, useProxy = false, isXtra = true),
+    ProtocolOption(
+        "XTRA", usePayload = false, useSsl = true, useProxy = false, isXtra = true,
+        description = "High performance protocol", iconRes = R.drawable.ic_protocol_bolt
+    ),
     // V2Ray: حقل JSON كامل (V2Ray/Xray config) - كيتبنى مباشرة فـ
     // startVpnService عبر XrayConfigParser.parse بلا Import.
-    ProtocolOption("V2Ray", usePayload = false, useSsl = false, useProxy = false, isV2Ray = true),
+    ProtocolOption(
+        "V2Ray", usePayload = false, useSsl = false, useProxy = false, isV2Ray = true,
+        description = "V2Ray core protocol", iconRes = R.drawable.ic_protocol_v2ray
+    ),
     // Shadowsocks: حقول Server/Port/Method/Password/UDP يدوية - كيتبنى
     // ParsedProxyConfig مباشرة فـstartVpnService بلا Import.
-    ProtocolOption("Shadowsocks", usePayload = false, useSsl = false, useProxy = false, isShadowsocks = true)
+    ProtocolOption(
+        "Shadowsocks", usePayload = false, useSsl = false, useProxy = false, isShadowsocks = true,
+        description = "Secure SOCKS5 proxy", iconRes = R.drawable.ic_protocol_globe
+    )
 )
 
 private val DEFAULT_PROTOCOL = PROTOCOL_OPTIONS[0]
@@ -1484,41 +1527,49 @@ class MainActivity : AppCompatActivity() {
     private fun showProtocolPicker() {
         val currentProtocol = manualFieldsPrefs().getString("protocol", DEFAULT_PROTOCOL.label)
             ?: DEFAULT_PROTOCOL.label
-        val labels = PROTOCOL_OPTIONS.map { it.label }
 
-        // Adapter مخصص غير باش نلونو اسم البروتوكول المختار حاليا بالأخضر
-        // ونزيدو خط فاصل أخضر رفيع بين كل صف والآخر - بلا Radio Button
-        // وبلا علامة ✓ وبلا خلفية كبيرة (هادشي هو التصميم الافتراضي
-        // ديال setItems لي كنا كنستعملوه قبل). اختيار العنصر (onClick)
-        // بقا بالضبط نفس السلوك القديم: switchToManualProtocol().
-        val adapter = object : ArrayAdapter<String>(this, R.layout.item_protocol_choice, R.id.txtProtocolName, labels) {
-            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-                val row = convertView ?: LayoutInflater.from(context)
-                    .inflate(R.layout.item_protocol_choice, parent, false)
-                val txt = row.findViewById<TextView>(R.id.txtProtocolName)
-                val divider = row.findViewById<View>(R.id.dividerProtocol)
+        // Dialog مخصص (نفس أسلوب dialog_import.xml: Card بحواف مدورة +
+        // خلفية نافذة شفافة) بدل AlertDialog.Builder().setAdapter() القديم.
+        val view = layoutInflater.inflate(R.layout.dialog_choose_protocol, null)
+        val llList = view.findViewById<LinearLayout>(R.id.llProtocolList)
+        val btnClose = view.findViewById<View>(R.id.btnProtocolClose)
+        val btnCancel = view.findViewById<View>(R.id.btnProtocolCancel)
 
-                val label = labels[position]
-                txt.text = label
-                txt.setTextColor(
-                    androidx.core.content.ContextCompat.getColor(
-                        this@MainActivity,
-                        if (label == currentProtocol) R.color.accent_green else R.color.text_primary
-                    )
-                )
-                // خط الفصل بين كل بروتوكول والآخر - ماكاينش بعد آخر عنصر.
-                divider.visibility = if (position == labels.lastIndex) View.GONE else View.VISIBLE
-                return row
+        val dialog = AlertDialog.Builder(this)
+            .setView(view)
+            .create()
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+
+        // كل عنصر فـPROTOCOL_OPTIONS كيولد صف واحد تلقائيا (Dynamic list) -
+        // بروتوكول جديد يتزاد فاللائحة فوق كافي باش يبان هنا بلا أي تعديل
+        // فهاد الدالة. اختيار الصف (onClick) بقا بالضبط نفس السلوك القديم:
+        // switchToManualProtocol().
+        PROTOCOL_OPTIONS.forEach { opt ->
+            val row = layoutInflater.inflate(R.layout.item_protocol_choice, llList, false)
+            val img = row.findViewById<android.widget.ImageView>(R.id.imgProtocolIcon)
+            val txtName = row.findViewById<TextView>(R.id.txtProtocolName)
+            val txtDesc = row.findViewById<TextView>(R.id.txtProtocolDesc)
+            val radio = row.findViewById<android.widget.ImageView>(R.id.imgProtocolRadio)
+
+            val isSelected = opt.label == currentProtocol
+            img.setImageResource(opt.iconRes)
+            txtName.text = opt.label
+            txtDesc.text = opt.description
+            radio.setImageResource(if (isSelected) R.drawable.ic_radio_checked else R.drawable.ic_radio_unchecked)
+            row.background = androidx.core.content.ContextCompat.getDrawable(
+                this, if (isSelected) R.drawable.shape_card_active else R.drawable.shape_card_alt
+            )
+            row.setOnClickListener {
+                dialog.dismiss()
+                switchToManualProtocol(opt)
             }
+            llList.addView(row)
         }
 
-        AlertDialog.Builder(this)
-            .setTitle("Choose Protocol")
-            .setAdapter(adapter) { _, which ->
-                switchToManualProtocol(PROTOCOL_OPTIONS[which])
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+        btnClose.setOnClickListener { dialog.dismiss() }
+        btnCancel.setOnClickListener { dialog.dismiss() }
+
+        dialog.show()
     }
 
     /** كيرجع لوضع الحقول اليدوية (SSH أو XTRA)، وكيعمر usePayload/useSsl/
