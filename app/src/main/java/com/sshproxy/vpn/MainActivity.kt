@@ -1517,6 +1517,7 @@ class MainActivity : AppCompatActivity() {
             .setAdapter(adapter) { _, which ->
                 switchToManualProtocol(PROTOCOL_OPTIONS[which])
             }
+            .setNegativeButton("Cancel", null)
             .show()
     }
 
@@ -1525,6 +1526,14 @@ class MainActivity : AppCompatActivity() {
      *  المستخدم من "Choose Protocol" - بلا ما يحتاج يدوس على أي checkbox
      *  بيدو (الـcheckboxes بقاو خدامين فالكود، غير مخبيين من الواجهة). */
     private fun switchToManualProtocol(opt: ProtocolOption) {
+        // إلا كان فيه اتصال/محاولة اتصال جارية (بملف محفوظ ولا Import
+        // Code) ملي المستخدم يختار بروتوكول جديد من "Choose Protocol"،
+        // خصنا نقطعوه أولا - قبل هاد الفيكس، الـtunnel كان يبقى خدام
+        // فعليا بالسيرفر القديم بينما الواجهة كتبدل لحقول يدوية فارغة
+        // (تناقض: SSH SETTINGS تبان "Disconnected"/فارغة، والاتصال
+        // الحقيقي مازال شغال فالخلفية بكونفيغ آخر).
+        if (connected || connecting) disconnect()
+
         if (activeImportedConfig != null || activeXrayConfig != null) {
             SecureConfigStore.clear(applicationContext)
             activeImportedConfig = null
