@@ -4,6 +4,11 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- خاصة لـSubscriptionManager.getActiveDataSubscriptionId() باش
+         التطبيق يعرف اسم الأوبراتور الصحيح ديال الـSIM اللي فعلا كيدير
+         بيانات الهاتف فهاتف بـ2 SIM (dual-SIM) - بلا هاد الـpermission،
+         الكود كيرجع تلقائيا للطريقة القديمة (SIM الافتراضي فقط). -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"
         tools:targetApi="34" />
