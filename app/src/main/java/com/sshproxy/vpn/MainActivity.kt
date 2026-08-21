@@ -272,7 +272,10 @@ class MainActivity : AppCompatActivity() {
                     connecting = false; connected = true; reconnectingUi = false; failedUi = false
                 }
                 SshVpnService.STATE_RECONNECTING, SshVpnService.STATE_WAITING_NETWORK -> {
-                    reconnectingUi = true; failedUi = false
+                    // WAITING_NETWORK is NOT a successful connection.
+                    // Keep the UI in reconnecting/waiting state instead of
+                    // leaving connected=true (which made the button green).
+                    connecting = false; connected = false; reconnectingUi = true; failedUi = false
                 }
                 SshVpnService.STATE_DISCONNECTED -> {
                     connecting = false; connected = false; reconnectingUi = false; failedUi = false
@@ -751,7 +754,8 @@ class MainActivity : AppCompatActivity() {
                     connecting = false; connected = true; reconnectingUi = false
                 }
                 SshVpnService.STATE_RECONNECTING, SshVpnService.STATE_WAITING_NETWORK -> {
-                    connecting = false; connected = true; reconnectingUi = true
+                    // WAITING_NETWORK must never be rendered as CONNECTED.
+                    connecting = false; connected = false; reconnectingUi = true
                 }
                 else -> { // DISCONNECTED, FAILED, or nothing ever recorded
                     connecting = false; connected = false; reconnectingUi = false
