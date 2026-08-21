@@ -168,6 +168,7 @@ class SshVpnService : VpnService() {
 
     @Volatile private var vpnActive = false      // true from establish() success until stopVpn()
     @Volatile private var vpnStopped = false     // guards stopVpn() against running its body twice (see stopVpn)
+    @Volatile private var requestId: Long = 0L // identifies the current connection/config session
     @Volatile private var reconnecting = false
     @Volatile private var stopRequested = false  // true once the user taps Disconnect manually (even mid-CONNECTING)
     @Volatile private var networkAvailable = true
@@ -618,17 +619,8 @@ class SshVpnService : VpnService() {
         }
 
         log("Tunnel Started Successfully.")
-
-        // Do not show READY only because the VPN interface was created.
-        // A real network must exist first, otherwise the UI becomes green
-        // while the log says "No Network Available".
-        if (hasUsableNetwork()) {
-            log("Connection Established.")
-            broadcastStatus(STATE_READY)
-        } else {
-            log("Waiting for usable network...")
-            broadcastStatus(STATE_WAITING_NETWORK)
-        }
+        log("Connection Established.")
+        broadcastStatus(STATE_READY)
 
         // SSH can report "connected" even though real internet isn't passing
         // through the tunnel. Like HTTP Custom's 200 OK ping, we run a real
