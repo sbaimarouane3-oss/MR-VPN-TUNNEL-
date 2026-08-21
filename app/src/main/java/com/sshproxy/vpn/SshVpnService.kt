@@ -720,6 +720,18 @@ class SshVpnService : VpnService() {
             throw IllegalArgumentException("ERROR: ${e.javaClass.simpleName}: ${realDetail(e)}", e)
         }
 
+        // فحص الشبكة قبل أي محاولة اتصال حقيقية - Xray Core (libv2ray عبر
+        // JNI/native) ما مصمّمش يتعامل بأمان مع "بلا شبكة خالص" (مثلا DNS
+        // resolution أو فتح socket بلا أي interface متاح) - هادشي وارد
+        // يسبب native crash (SIGSEGV/Go panic) كيقتل الـprocess مباشرة،
+        // بلا ما يتلقط بـtry/catch ديال Kotlin هنا فوق. بفحص الشبكة قبل ما
+        // نديرو XrayCoreManager.start()، كنولّيو "No Network" غلطة عادية
+        // كتنكتب فاللوگ وتعاود تحاول بـbackoff - بحال أي غلطة أخرى - بدل
+        // كراش صامت كيسد التطبيق كامل.
+        if (!hasUsableNetwork()) {
+            throw java.io.IOException("No network connection available.")
+        }
+
         log("Connecting...")
         val started = XrayCoreManager.start(
             context = applicationContext,
