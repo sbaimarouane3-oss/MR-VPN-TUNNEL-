@@ -213,6 +213,11 @@ class MainActivity : AppCompatActivity() {
     private var lastButtonVisualState: String? = null
     // طلب تبديل Config المعلّق؛ كنلغي الطلب السابق باش آخر ضغطة هي اللي تربح.
     private var pendingConfigConnectJob: Job? = null
+    // Unique id for the currently selected VPN service session. Status/state
+    // messages from an older :vpnproc instance are ignored after a Config
+    // switch, so the old DISCONNECTED/READY event cannot cancel the new one.
+    private var serviceRequestId: Long = 0L
+    private var pendingServiceRequestId: Long? = null
 
     private val vpnPrepareLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -249,6 +254,16 @@ class MainActivity : AppCompatActivity() {
     // نعتمدو غير على تحليل نص اللوگ.
     private val statusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
+            val incomingRequestId = intent.getLongExtra(SshVpnService.EXTRA_REQUEST_ID, -1L)
+            // Old vpnproc instances can still finish cleanup and broadcast
+            // DISCONNECTED after a new Config has already been selected.
+            // Never let such a stale event overwrite the new Config state.
+            if (incomingRequestId >= 0L && serviceRequestId == 0L) {
+                serviceRequestId = incomingRequestId
+            } else if (incomingRequestId >= 0L && incomingRequestId != serviceRequestId) {
+                return
+            }
+
             when (intent.getStringExtra(SshVpnService.EXTRA_STATE)) {
                 SshVpnService.STATE_CONNECTING -> {
                     connecting = true; connected = false; reconnectingUi = false; failedUi = false
@@ -721,6 +736,12 @@ class MainActivity : AppCompatActivity() {
             // file - so the button always resets itself to CONNECT on its
             // own the next time the app is opened, instead of staying stuck
             // on CONNECTING.../DISCONNECT forever.
+            val snapshot = withContext(Dispatchers.IO) { StateStore.readSnapshot(applicationContext) }
+            if (serviceRequestId == 0L && snapshot.requestId >= 0L) {
+                serviceRequestId = snapshot.requestId
+            } else if (snapshot.requestId >= 0L && snapshot.requestId != serviceRequestId) {
+                return@launch
+            }
             val state = withContext(Dispatchers.IO) { StateStore.readReconciled(applicationContext) }
             when (state) {
                 SshVpnService.STATE_CONNECTING -> {
@@ -948,7 +969,7 @@ class MainActivity : AppCompatActivity() {
             editingConfigOriginalName!!.removeSuffix(".${MlConfigFile.EXTENSION}")
         } else ""
         val nameInput = EditText(this).apply {
-            hint = "Config name (any text/emoji)"
+            hint = "Config name"
             if (prefillName.isNotEmpty()) {
                 setText(prefillName)
                 setSelection(prefillName.length)
@@ -1224,13 +1245,21 @@ class MainActivity : AppCompatActivity() {
         // القديم بلا ما تكمل تتصل بالجديد - وخصنا ضغطة ثانية باش يخدم.
         // الحل: نستناو أكثر من 300ms (400ms) قبل ما نبداو tryConnect().
         val needsDisconnectFirst = (connected || connecting) && activeConfigFileName != displayName
+        val oldServiceRequestId = serviceRequestId
+        if (needsDisconnectFirst) {
+            // Invalidate every event belonging to the old VPN session before
+            // asking that session to stop. The UI can switch to B immediately,
+            // while the old process finishes cleanup in the background.
+            serviceRequestId = System.nanoTime()
+            pendingServiceRequestId = serviceRequestId
+        }
         // إلا كان كاين تبديل سابق مازال كيتسنى، نلغيوه فوراً.
         // هكذا مايمكنش طلب قديم يرجع من بعد ويشغل Config آخر.
         pendingConfigConnectJob?.cancel()
         pendingConfigConnectJob = null
 
         if (needsDisconnectFirst) {
-            disconnect()
+            disconnect(oldServiceRequestId)
         }
 
         val ok = applyFieldsAsHiddenImportedConfig(fields)
@@ -1256,7 +1285,7 @@ class MainActivity : AppCompatActivity() {
                 delay(400)
                 try {
                     // إلا المستخدم ضغط Config آخر، هاد الطلب مايبقاش صالح.
-                    if (activeConfigFileName != displayName || !connecting) return@launch
+                    if (activeConfigFileName != displayName) return@launch
                     // دابا فقط نطلق الخدمة الجديدة؛ مدة الانتظار ماكتبانش للمستخدم.
                     connecting = false
                     tryConnect()
@@ -2231,18 +2260,23 @@ class MainActivity : AppCompatActivity() {
 
     private fun startVpnService() {
         try {
+            val requestId = pendingServiceRequestId ?: System.nanoTime()
+            serviceRequestId = requestId
+            pendingServiceRequestId = null
             val xray = activeXrayConfig
             val imported = activeImportedConfig
             val f = sshFragment
 
-            val intent = Intent(this, SshVpnService::class.java)
+            val intent = Intent(this, SshVpnService::class.java).apply {
+                putExtra(SshVpnService.EXTRA_REQUEST_ID, requestId)
+            }
 
             // ===== V2Ray/Xray - مسار مستقل كامل، بلا مساس بـSSH تحت =====
             if (xray != null) {
                 intent.putExtra(SshVpnService.EXTRA_MODE, SshVpnService.MODE_XRAY)
                 intent.putExtra(SshVpnService.EXTRA_XRAY_CONFIG, xray.toJson())
 
-                StateStore.write(applicationContext, SshVpnService.STATE_CONNECTING)
+                StateStore.write(applicationContext, SshVpnService.STATE_CONNECTING, requestId)
                 startService(intent)
                 connecting = true
                 connected = false
@@ -2298,7 +2332,7 @@ class MainActivity : AppCompatActivity() {
                 intent.putExtra(SshVpnService.EXTRA_MODE, SshVpnService.MODE_XRAY)
                 intent.putExtra(SshVpnService.EXTRA_XRAY_CONFIG, cfg.toJson())
 
-                StateStore.write(applicationContext, SshVpnService.STATE_CONNECTING)
+                StateStore.write(applicationContext, SshVpnService.STATE_CONNECTING, requestId)
                 startService(intent)
                 connecting = true
                 connected = false
@@ -2325,7 +2359,7 @@ class MainActivity : AppCompatActivity() {
                 intent.putExtra(SshVpnService.EXTRA_MODE, SshVpnService.MODE_XRAY)
                 intent.putExtra(SshVpnService.EXTRA_XRAY_CONFIG, cfg.toJson())
 
-                StateStore.write(applicationContext, SshVpnService.STATE_CONNECTING)
+                StateStore.write(applicationContext, SshVpnService.STATE_CONNECTING, requestId)
                 startService(intent)
                 connecting = true
                 connected = false
@@ -2356,7 +2390,7 @@ class MainActivity : AppCompatActivity() {
                 intent.putExtra(SshVpnService.EXTRA_MODE, SshVpnService.MODE_XRAY)
                 intent.putExtra(SshVpnService.EXTRA_XRAY_CONFIG, cfg.toJson())
 
-                StateStore.write(applicationContext, SshVpnService.STATE_CONNECTING)
+                StateStore.write(applicationContext, SshVpnService.STATE_CONNECTING, requestId)
                 startService(intent)
                 connecting = true
                 connected = false
@@ -2405,7 +2439,7 @@ class MainActivity : AppCompatActivity() {
             // snaps the button straight back to CONNECT for one tick -
             // causing the CONNECTING... -> CONNECT -> CONNECTING... flicker.
             // Writing it here first closes that window entirely.
-            StateStore.write(applicationContext, SshVpnService.STATE_CONNECTING)
+            StateStore.write(applicationContext, SshVpnService.STATE_CONNECTING, requestId)
             startService(intent)
             connecting = true
             connected = false
@@ -2420,12 +2454,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun disconnect() {
+    private fun disconnect(requestId: Long = serviceRequestId) {
         pendingConfigConnectJob?.cancel()
         pendingConfigConnectJob = null
         try {
             val intent = Intent(this, SshVpnService::class.java).apply {
                 action = SshVpnService.ACTION_DISCONNECT
+                putExtra(SshVpnService.EXTRA_REQUEST_ID, requestId)
             }
             startService(intent)
             connected = false
