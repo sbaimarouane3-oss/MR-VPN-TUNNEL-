@@ -1165,38 +1165,34 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (ok && savedFileName != null) {
-                // FIX (مشكلة 2): قبل هاد التصحيح، أي CREATE CONFIG (حتى
-                // ملي كون الاتصال الحقيقي الجاري هو Manual/Choose Protocol
-                // ولا Import Code) كان كيبدل activeConfigFileName/
-                // configSource لـSAVED_CONFIG مباشرة - فيبان الملف الجديد
-                // فـCONFIG tab وكأنه هو الاتصال النشط/RUNNING، رغم أن
-                // الـtunnel الحقيقي مازال خدام بمصدر آخر بالكامل (mismatch
-                // بين Connection Source و Config Source).
+                // FIX (مشكلة 2 - محدّثة): كان بقا خطأ حتى ملي ما كنتش
+                // متصل: CREATE CONFIG جديد من SSH SETTINGS كان دايما
+                // كيبدل activeConfigFileName/configSource للملف الجديد،
+                // فكانت SSH SETTINGS تبان وكأنها "فتحات" ولا "حملات" هاد
+                // الملف المحفوظ - رغم أن كل لي دار المستخدم هو إنشاء ملف
+                // جديد بمعلومات السيرفر لي كتب يدوياً، ماشي فتح/تحميل ملف
+                // من CONFIG.
                 //
-                // الحل: نبدلو activeConfigFileName/configSource للملف
-                // الجديد غير فحالتين:
-                // 1) ما كاين حتى اتصال/محاولة اتصال جارية دابا (السلوك
-                //    القديم بلا تغيير).
-                // 2) هاد الحفظ هو تعديل In-Place (Edit/Rename) لنفس
-                //    الملف لي هو ديجا الـSAVED_CONFIG النشط - فهاد الحالة
-                //    فعلا بقات نفس الاتصال، غير الاسم/المحتوى تبدل.
-                //
-                // فكل حالة أخرى (مثلا: متصل بـManual من SSH SETTINGS ثم
-                // CREATE CONFIG لملف جديد، أو Edit لملف آخر ماشي النشط)،
-                // الملف كيتحفظ عادي فـDownloads لكن بلا ما "يسرق" حالة
-                // Active/Running - الاتصال الحقيقي كيبقى واضح أن مصدره
-                // Manual/Import Code بحالو.
+                // القاعدة الصحيحة: CREATE CONFIG (إنشاء ملف جديد) كيحفظ
+                // الملف فـCONFIG tab فقط - وما كيبدلش هوية/حالة SSH
+                // SETTINGS خالص. الاستثناء الوحيد: Edit/Rename في-مكانه
+                // لنفس الملف لي هو ديجا الـSAVED_CONFIG المحمّل/النشط -
+                // هاد الحالة بحالها فعلا هي نفس الملف، غير الاسم/المحتوى
+                // تبدلو.
                 val wasEditingActiveConfig = editingOriginal != null &&
                     configSource == ConfigSource.SAVED_CONFIG &&
                     activeConfigFileName == editingOriginal
-                val liveConnectionFromOtherSource = (connected || connecting) && !wasEditingActiveConfig
-                if (!liveConnectionFromOtherSource) {
+                if (wasEditingActiveConfig) {
                     // حدّث هوية الملف النشط حتى يبان الاسم الجديد مباشرة في SSH SETTINGS
                     // وما يبقاش activeConfigFileName مربوط بالاسم القديم.
                     activeConfigFileName = savedFileName
                     configSource = ConfigSource.SAVED_CONFIG
                     persistLastSavedConfigFileName(savedFileName)
                 }
+                // ملاحظة: فحالة إنشاء ملف جديد (editingOriginal == null) أو
+                // تعديل ملف آخر ماشي هو النشط، ما كنبدلوش activeConfigFileName/
+                // configSource خالص - الملف كيتحفظ عادي فـCONFIG وSSH
+                // SETTINGS كتبقى بحالها بلا ما "تسرق" هوية الملف الجديد.
 
                 Toast.makeText(
                     this@MainActivity,
