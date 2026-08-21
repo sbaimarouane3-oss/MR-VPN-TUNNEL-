@@ -51,6 +51,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -171,6 +172,10 @@ class MainActivity : AppCompatActivity() {
     // الدائري يبين أحمر بدل الرمادي العادي ديال DISCONNECTED. كيتصفى
     // (false) فأول CONNECTING جديدة أو DISCONNECT يدوي.
     private var failedUi = false
+
+    // يمنع سباق تبديل Configs: أي طلب تشغيل جديد يلغي انتظار الطلب السابق،
+    // وماكيبداش الاتصال الجديد حتى تسالي عملية إيقاف الـVPN القديمة.
+    private var configSwitchJob: Job? = null
 
     private var sshFragment: SshFragment? = null
     private var logFragment: LogFragment? = null
@@ -1221,6 +1226,11 @@ class MainActivity : AppCompatActivity() {
         // القديم بلا ما تكمل تتصل بالجديد - وخصنا ضغطة ثانية باش يخدم.
         // الحل: نستناو أكثر من 300ms (400ms) قبل ما نبداو tryConnect().
         val needsDisconnectFirst = (connected || connecting) && activeConfigFileName != displayName
+
+        // أي تبديل سابق ماخصوش يبقى قادر يشغل Config قديم من بعد.
+        // هادي مهمة خصوصا ملي المستخدم كيدوس بسرعة A ثم B ثم C.
+        configSwitchJob?.cancel()
+
         if (needsDisconnectFirst) {
             disconnect()
         }
@@ -1234,10 +1244,16 @@ class MainActivity : AppCompatActivity() {
         persistImportedConfigActive(false)
         updateImportUiState()
         if (needsDisconnectFirst) {
-            lifecycleScope.launch {
-                delay(400)
+            configSwitchJob = lifecycleScope.launch {
+                // SshVpnService كتقتل process ديالها بعد 300ms. كنخليو
+                // هامش أكبر، باش مايمكنش start ديال Config الجديد يوقع
+                // داخل process القديمة أو يتقتل بالـkillProcess القديم.
+                delay(1000)
+                if (!isActive) return@launch
                 try {
-                    if (!connected && !connecting) tryConnect()
+                    if (!connected && !connecting && activeConfigFileName == displayName) {
+                        tryConnect()
+                    }
                 } catch (e: Throwable) {
                     appendLog("ERROR: ${e.javaClass.simpleName}: ${e.message ?: "Unknown error"}")
                 }
