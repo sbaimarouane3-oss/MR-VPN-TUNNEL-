@@ -1279,7 +1279,7 @@ class MainActivity : AppCompatActivity() {
         // killProcess() (المجدولة من الـdisconnect القديم) كتقتل الاتصال
         // الجديد معاها. هادشي كان كيخلي أول ضغطة تدير غير قطع الاتصال
         // القديم بلا ما تكمل تتصل بالجديد - وخصنا ضغطة ثانية باش يخدم.
-        // الحل: نستناو أكثر من 300ms (400ms) قبل ما نبداو tryConnect().
+        // الحل: نستناو أكثر من 300ms (1200ms) قبل ما نبداو tryConnect().
         val needsDisconnectFirst = (connected || connecting) && activeConfigFileName != displayName
         val oldServiceRequestId = serviceRequestId
         if (needsDisconnectFirst) {
@@ -1318,12 +1318,14 @@ class MainActivity : AppCompatActivity() {
             configFragment?.updateActiveVisuals(activeConfigFileName, connected, connecting)
 
             pendingConfigConnectJob = lifecycleScope.launch {
-                delay(400)
+                delay(1200)
                 try {
                     // إلا المستخدم ضغط Config آخر، هاد الطلب مايبقاش صالح.
                     if (activeConfigFileName != displayName) return@launch
                     // دابا فقط نطلق الخدمة الجديدة؛ مدة الانتظار ماكتبانش للمستخدم.
-                    connecting = false
+                    // tryConnect() owns the transition from CONNECTING to the real service state.
+                    // Do not briefly publish DISCONNECTED/idle here; stale UI callbacks from the old session
+                    // must never make the new Config look failed or force a second tap.
                     tryConnect()
                 } catch (e: Throwable) {
                     connecting = false
