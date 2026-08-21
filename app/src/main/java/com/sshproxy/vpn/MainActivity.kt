@@ -1173,7 +1173,7 @@ class MainActivity : AppCompatActivity() {
 
                 Toast.makeText(
                     this@MainActivity,
-                    "Config saved to Download/MR VPN TUNNEL ",
+                    "Config saved to Download/MR VPN TUNNEL",
                     Toast.LENGTH_SHORT
                 ).show()
                 editingConfigOriginalName = null
