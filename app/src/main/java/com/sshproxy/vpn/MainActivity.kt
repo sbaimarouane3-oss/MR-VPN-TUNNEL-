@@ -1621,6 +1621,8 @@ class MainActivity : AppCompatActivity() {
             .setView(view)
             .create()
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.setCancelable(true)
+        dialog.setCanceledOnTouchOutside(false)
 
         // كل عنصر فـPROTOCOL_OPTIONS كيولد صف واحد تلقائيا (Dynamic list) -
         // بروتوكول جديد يتزاد فاللائحة فوق كافي باش يبان هنا بلا أي تعديل
@@ -1716,6 +1718,7 @@ class MainActivity : AppCompatActivity() {
         // the whole dialog shrinks to fit above it and Import/Cancel are
         // never hidden underneath.
         dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        dialog.setCanceledOnTouchOutside(false)
 
         btnCancel.setOnClickListener { dialog.dismiss() }
         btnConfirm.setOnClickListener {
