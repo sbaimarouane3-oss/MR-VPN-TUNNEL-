@@ -1165,11 +1165,38 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (ok && savedFileName != null) {
-                // حدّث هوية الملف النشط حتى يبان الاسم الجديد مباشرة في SSH SETTINGS
-                // وما يبقاش activeConfigFileName مربوط بالاسم القديم.
-                activeConfigFileName = savedFileName
-                configSource = ConfigSource.SAVED_CONFIG
-                persistLastSavedConfigFileName(savedFileName)
+                // FIX (مشكلة 2): قبل هاد التصحيح، أي CREATE CONFIG (حتى
+                // ملي كون الاتصال الحقيقي الجاري هو Manual/Choose Protocol
+                // ولا Import Code) كان كيبدل activeConfigFileName/
+                // configSource لـSAVED_CONFIG مباشرة - فيبان الملف الجديد
+                // فـCONFIG tab وكأنه هو الاتصال النشط/RUNNING، رغم أن
+                // الـtunnel الحقيقي مازال خدام بمصدر آخر بالكامل (mismatch
+                // بين Connection Source و Config Source).
+                //
+                // الحل: نبدلو activeConfigFileName/configSource للملف
+                // الجديد غير فحالتين:
+                // 1) ما كاين حتى اتصال/محاولة اتصال جارية دابا (السلوك
+                //    القديم بلا تغيير).
+                // 2) هاد الحفظ هو تعديل In-Place (Edit/Rename) لنفس
+                //    الملف لي هو ديجا الـSAVED_CONFIG النشط - فهاد الحالة
+                //    فعلا بقات نفس الاتصال، غير الاسم/المحتوى تبدل.
+                //
+                // فكل حالة أخرى (مثلا: متصل بـManual من SSH SETTINGS ثم
+                // CREATE CONFIG لملف جديد، أو Edit لملف آخر ماشي النشط)،
+                // الملف كيتحفظ عادي فـDownloads لكن بلا ما "يسرق" حالة
+                // Active/Running - الاتصال الحقيقي كيبقى واضح أن مصدره
+                // Manual/Import Code بحالو.
+                val wasEditingActiveConfig = editingOriginal != null &&
+                    configSource == ConfigSource.SAVED_CONFIG &&
+                    activeConfigFileName == editingOriginal
+                val liveConnectionFromOtherSource = (connected || connecting) && !wasEditingActiveConfig
+                if (!liveConnectionFromOtherSource) {
+                    // حدّث هوية الملف النشط حتى يبان الاسم الجديد مباشرة في SSH SETTINGS
+                    // وما يبقاش activeConfigFileName مربوط بالاسم القديم.
+                    activeConfigFileName = savedFileName
+                    configSource = ConfigSource.SAVED_CONFIG
+                    persistLastSavedConfigFileName(savedFileName)
+                }
 
                 Toast.makeText(
                     this@MainActivity,
@@ -1814,6 +1841,25 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun saveXrayConfig(cfg: ParsedProxyConfig) {
+        // FIX (مشكلة 1): Import Code كان كيبدل الكونفيغ المخزن (Xray/SSH)
+        // بلا ما يوقف الاتصال/التunnel القديم لي كان مازال خدام فعليا فـ
+        // SshVpnService (:vpnproc) - نفس الطريقة لي كتستعملها
+        // connectConfigFile() فوق: نبطلو serviceRequestId القديم قبل ما
+        // نطلبو disconnect، باش أي broadcast قديم (READY/RECONNECTING...)
+        // مايقدرش يرجع يفعّل الاتصال القديم من بعد ما تبدل المصدر (race
+        // condition). disconnect() كتبدل connected/connecting لـfalse
+        // مباشرة وبشكل متزامن (sync)، فالكود لي تحت كيقرا القيمة الصحيحة.
+        // بعد الحفظ، الاتصال كيبقى Disconnected - المستخدم خاصو يدوس
+        // START من جديد باش يشغل الـImport الجديد فقط.
+        if (connected || connecting) {
+            val oldServiceRequestId = serviceRequestId
+            serviceRequestId = System.nanoTime()
+            pendingServiceRequestId = null
+            pendingConfigConnectJob?.cancel()
+            pendingConfigConnectJob = null
+            disconnect(oldServiceRequestId)
+        }
+
         // كونفيغ واحد فقط مسموح - إلا كان SSH config محفوظ نمحيوه (نفس
         // القاعدة "config واحد" ديال SecureConfigStore القديمة).
         configSource = ConfigSource.IMPORTED
@@ -1834,6 +1880,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun saveImportedConfig(cfg: ImportedConfig) {
+        // FIX (مشكلة 1): نفس التصحيح ديال saveXrayConfig فوق - شوف
+        // التعليق هناك للتفاصيل الكاملة.
+        if (connected || connecting) {
+            val oldServiceRequestId = serviceRequestId
+            serviceRequestId = System.nanoTime()
+            pendingServiceRequestId = null
+            pendingConfigConnectJob?.cancel()
+            pendingConfigConnectJob = null
+            disconnect(oldServiceRequestId)
+        }
+
         configSource = ConfigSource.IMPORTED
         // Import Code ماشي Saved Config: خاصنا نمسحو اسم الملف القديم
         // من الذاكرة حتى CONFIG tab مايبقاش يبين ملف .zrr قديم على أنه نشط.
