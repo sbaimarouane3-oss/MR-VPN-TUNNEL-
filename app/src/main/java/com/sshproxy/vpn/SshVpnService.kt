@@ -65,6 +65,7 @@ class SshVpnService : VpnService() {
         // JSON ديال ParsedProxyConfig.toJson() - مبني من طرف MainActivity/
         // الاستيراد قبل ما يبدا الـservice.
         const val EXTRA_XRAY_CONFIG = "xrayParsedConfigJson"
+        const val EXTRA_REQUEST_ID = "requestId"
 
         private const val MAX_AUTO_RECONNECT_WINDOW_MS = 60 * 60 * 1000L // 1 hour
 
@@ -254,6 +255,7 @@ class SshVpnService : VpnService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        requestId = intent?.getLongExtra(EXTRA_REQUEST_ID, requestId) ?: requestId
         if (intent?.action == ACTION_DISCONNECT) {
             stopRequested = true
             stopVpn()
@@ -1537,7 +1539,7 @@ class SshVpnService : VpnService() {
         // recreated / the app being backgrounded) so MainActivity always has
         // a real, current source of truth to sync against - never just the
         // last value it happened to hold in memory.
-        StateStore.write(applicationContext, state)
+        StateStore.write(applicationContext, state, requestId)
         updateNotification(state)
         if (state == STATE_READY) {
             // Fire the (at most once per process) update check only once we
@@ -1560,6 +1562,7 @@ class SshVpnService : VpnService() {
         try {
             val i = Intent(ACTION_STATUS)
             i.putExtra(EXTRA_STATE, state)
+            i.putExtra(EXTRA_REQUEST_ID, requestId)
             sendBroadcast(i)
         } catch (_: Throwable) { }
     }
