@@ -173,10 +173,6 @@ class MainActivity : AppCompatActivity() {
     // (false) فأول CONNECTING جديدة أو DISCONNECT يدوي.
     private var failedUi = false
 
-    // يمنع سباق تبديل Configs: أي طلب تشغيل جديد يلغي انتظار الطلب السابق،
-    // وماكيبداش الاتصال الجديد حتى تسالي عملية إيقاف الـVPN القديمة.
-    private var configSwitchJob: Job? = null
-
     private var sshFragment: SshFragment? = null
     private var logFragment: LogFragment? = null
     private var configFragment: ConfigFragment? = null
@@ -215,6 +211,8 @@ class MainActivity : AppCompatActivity() {
     // بزاف)، غير ملي الحالة تبدل فعليا (بحال connecting/reconnecting).
     private var pulseAnimator: ValueAnimator? = null
     private var lastButtonVisualState: String? = null
+    // طلب تبديل Config المعلّق؛ كنلغي الطلب السابق باش آخر ضغطة هي اللي تربح.
+    private var pendingConfigConnectJob: Job? = null
 
     private val vpnPrepareLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -1226,10 +1224,10 @@ class MainActivity : AppCompatActivity() {
         // القديم بلا ما تكمل تتصل بالجديد - وخصنا ضغطة ثانية باش يخدم.
         // الحل: نستناو أكثر من 300ms (400ms) قبل ما نبداو tryConnect().
         val needsDisconnectFirst = (connected || connecting) && activeConfigFileName != displayName
-
-        // أي تبديل سابق ماخصوش يبقى قادر يشغل Config قديم من بعد.
-        // هادي مهمة خصوصا ملي المستخدم كيدوس بسرعة A ثم B ثم C.
-        configSwitchJob?.cancel()
+        // إلا كان كاين تبديل سابق مازال كيتسنى، نلغيوه فوراً.
+        // هكذا مايمكنش طلب قديم يرجع من بعد ويشغل Config آخر.
+        pendingConfigConnectJob?.cancel()
+        pendingConfigConnectJob = null
 
         if (needsDisconnectFirst) {
             disconnect()
@@ -1244,20 +1242,29 @@ class MainActivity : AppCompatActivity() {
         persistImportedConfigActive(false)
         updateImportUiState()
         if (needsDisconnectFirst) {
-            configSwitchJob = lifecycleScope.launch {
-                // SshVpnService كتقتل process ديالها بعد 300ms. كنخليو
-                // هامش أكبر، باش مايمكنش start ديال Config الجديد يوقع
-                // داخل process القديمة أو يتقتل بالـkillProcess القديم.
-                delay(1000)
-                if (!isActive) return@launch
+            // الواجهة خاصها تبدل مباشرة مع الضغطة، ماشي من بعد ما تسالي مهلة
+            // إيقاف الـVPN القديم. كنعتبر Config الجديد في حالة CONNECTING
+            // بصرياً فوراً، بينما الخدمة القديمة كتكمّل الإيقاف في الخلفية.
+            connecting = true
+            connected = false
+            reconnectingUi = false
+            failedUi = false
+            applyConnectButtonState()
+            configFragment?.updateActiveVisuals(activeConfigFileName, connected, connecting)
+
+            pendingConfigConnectJob = lifecycleScope.launch {
+                delay(400)
                 try {
-                    if (!connected && !connecting && activeConfigFileName == displayName) {
-                        tryConnect()
-                    }
+                    // إلا المستخدم ضغط Config آخر، هاد الطلب مايبقاش صالح.
+                    if (activeConfigFileName != displayName || !connecting) return@launch
+                    // دابا فقط نطلق الخدمة الجديدة؛ مدة الانتظار ماكتبانش للمستخدم.
+                    connecting = false
+                    tryConnect()
                 } catch (e: Throwable) {
+                    connecting = false
                     appendLog("ERROR: ${e.javaClass.simpleName}: ${e.message ?: "Unknown error"}")
+                    applyConnectButtonState()
                 }
-                configFragment?.updateActiveVisuals(activeConfigFileName, connected, connecting)
             }
             return
         }
@@ -2414,6 +2421,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun disconnect() {
+        pendingConfigConnectJob?.cancel()
+        pendingConfigConnectJob = null
         try {
             val intent = Intent(this, SshVpnService::class.java).apply {
                 action = SshVpnService.ACTION_DISCONNECT
