@@ -15,26 +15,41 @@ import java.io.File
 object StateStore {
     private const val FILE_NAME = "vpn_state.txt"
 
+    data class Snapshot(val state: String, val requestId: Long)
+
     @Synchronized
     fun write(context: Context, state: String) {
+        write(context, state, -1L)
+    }
+
+    /** Writes state together with the connection request id that owns it.
+     * The id prevents a previous vpn process from overwriting the UI state
+     * after the user has already selected a different Config. */
+    @Synchronized
+    fun write(context: Context, state: String, requestId: Long) {
         try {
-            File(context.filesDir, FILE_NAME).writeText(state)
+            File(context.filesDir, FILE_NAME).writeText("$state|$requestId")
         } catch (_: Throwable) {
             // State persistence must never crash the service.
         }
     }
 
-    /** Returns the last known state, or DISCONNECTED if none was ever recorded. */
     @Synchronized
-    fun read(context: Context): String {
+    fun readSnapshot(context: Context): Snapshot {
         return try {
-            val file = File(context.filesDir, FILE_NAME)
-            if (file.exists()) file.readText().trim().ifBlank { SshVpnService.STATE_DISCONNECTED }
-            else SshVpnService.STATE_DISCONNECTED
+            val raw = File(context.filesDir, FILE_NAME).takeIf { it.exists() }?.readText()?.trim().orEmpty()
+            if (raw.isBlank()) return Snapshot(SshVpnService.STATE_DISCONNECTED, -1L)
+            val sep = raw.lastIndexOf('|')
+            if (sep <= 0) return Snapshot(raw, -1L)
+            Snapshot(raw.substring(0, sep), raw.substring(sep + 1).toLongOrNull() ?: -1L)
         } catch (_: Throwable) {
-            SshVpnService.STATE_DISCONNECTED
+            Snapshot(SshVpnService.STATE_DISCONNECTED, -1L)
         }
     }
+
+    /** Returns the last known state, or DISCONNECTED if none was ever recorded. */
+    @Synchronized
+    fun read(context: Context): String = readSnapshot(context).state
 
     /**
      * Whether the ":vpnproc" process (where SshVpnService actually lives) is
@@ -72,7 +87,7 @@ object StateStore {
      */
     @Synchronized
     fun readReconciled(context: Context): String {
-        val state = read(context)
+        val state = readSnapshot(context).state
         val claimsActive = state == SshVpnService.STATE_CONNECTING ||
             state == SshVpnService.STATE_READY ||
             state == SshVpnService.STATE_RECONNECTING ||
