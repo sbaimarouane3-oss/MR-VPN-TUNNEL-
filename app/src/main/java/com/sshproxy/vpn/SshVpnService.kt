@@ -618,8 +618,17 @@ class SshVpnService : VpnService() {
         }
 
         log("Tunnel Started Successfully.")
-        log("Connection Established.")
-        broadcastStatus(STATE_READY)
+
+        // Do not show READY only because the VPN interface was created.
+        // A real network must exist first, otherwise the UI becomes green
+        // while the log says "No Network Available".
+        if (hasUsableNetwork()) {
+            log("Connection Established.")
+            broadcastStatus(STATE_READY)
+        } else {
+            log("Waiting for usable network...")
+            broadcastStatus(STATE_WAITING_NETWORK)
+        }
 
         // SSH can report "connected" even though real internet isn't passing
         // through the tunnel. Like HTTP Custom's 200 OK ping, we run a real
