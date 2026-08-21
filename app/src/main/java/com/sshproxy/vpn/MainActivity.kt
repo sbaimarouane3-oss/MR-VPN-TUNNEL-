@@ -1874,7 +1874,7 @@ class MainActivity : AppCompatActivity() {
         activeXrayConfig = cfg
         updateImportUiState()
         appendLog("Configuration Loaded Successfully.")
-        Toast.makeText(this, "Config imported successfully \u2705", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Config imported successfully ", Toast.LENGTH_SHORT).show()
     }
 
     private fun saveImportedConfig(cfg: ImportedConfig) {
@@ -1903,7 +1903,7 @@ class MainActivity : AppCompatActivity() {
         activeImportedConfig = cfg
         updateImportUiState()
         appendLog("Configuration Loaded Successfully.")
-        Toast.makeText(this, "Config imported successfully \u2705", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Config imported successfully ", Toast.LENGTH_SHORT).show()
     }
 
     private fun confirmRemoveImportedConfig() {
