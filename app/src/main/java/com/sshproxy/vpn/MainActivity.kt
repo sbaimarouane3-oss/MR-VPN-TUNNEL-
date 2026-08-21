@@ -1173,7 +1173,7 @@ class MainActivity : AppCompatActivity() {
 
                 Toast.makeText(
                     this@MainActivity,
-                    "Config saved to Download/MR VPN TUNNEL ✅",
+                    "Config saved to Download/MR VPN TUNNEL ",
                     Toast.LENGTH_SHORT
                 ).show()
                 editingConfigOriginalName = null
@@ -1814,8 +1814,12 @@ class MainActivity : AppCompatActivity() {
         // كونفيغ واحد فقط مسموح - إلا كان SSH config محفوظ نمحيوه (نفس
         // القاعدة "config واحد" ديال SecureConfigStore القديمة).
         configSource = ConfigSource.IMPORTED
+        // Import Code ماشي Saved Config: خاصنا نمسحو اسم الملف القديم
+        // من الذاكرة حتى CONFIG tab مايبقاش يبين ملف .zrr قديم على أنه نشط.
+        activeConfigFileName = null
         persistLastSavedConfigFileName(null)
         persistImportedConfigActive(true)
+        configFragment?.updateActiveVisuals(null, connected, connecting)
         SecureConfigStore.clear(applicationContext)
         activeImportedConfig = null
 
@@ -1828,8 +1832,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun saveImportedConfig(cfg: ImportedConfig) {
         configSource = ConfigSource.IMPORTED
+        // Import Code ماشي Saved Config: خاصنا نمسحو اسم الملف القديم
+        // من الذاكرة حتى CONFIG tab مايبقاش يبين ملف .zrr قديم على أنه نشط.
+        activeConfigFileName = null
         persistLastSavedConfigFileName(null)
         persistImportedConfigActive(true)
+        configFragment?.updateActiveVisuals(null, connected, connecting)
         XraySecureConfigStore.clear(applicationContext)
         activeXrayConfig = null
 
