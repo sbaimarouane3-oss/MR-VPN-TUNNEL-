@@ -77,10 +77,18 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
                 rowViews[entry.displayName] = row
                 llConfigList.addView(row)
             }
+            // FIX (مشكلة 3): قبل هاد التصحيح، updateActiveVisuals() كانت
+            // كتندى غير ملي activeName != null - يعني إلا رجعت
+            // activeConfigFileName لـnull بطريقة غير متوقعة (مثلا بسبب
+            // mismatch مؤقت بين Connection Source و Config Source - شوف
+            // فيكس مشكلة 2)، كل الصفوف الجداد المبنية دابا كانت كتبقى
+            // بالحالة الافتراضية بلا أي مزامنة صريحة مع الحالة الحقيقية.
+            // دابا كندّيو updateActiveVisuals() دايما، بلا شرط - هادشي
+            // كيضمن: كل ملف غير نشط عندو START ظاهر دايما، والملف النشط
+            // فقط هو لي كيبين RUNNING/STOP - بلا ما نخفيو ولا نمسحو حتى
+            // ملف من اللائحة.
             val activeName = activity?.activeConfigFileNameOrNull()
-            if (activeName != null) {
-                updateActiveVisuals(activeName, activity?.isConnectedNow() ?: false, activity?.isConnectingNow() ?: false)
-            }
+            updateActiveVisuals(activeName, activity?.isConnectedNow() ?: false, activity?.isConnectingNow() ?: false)
         }
     }
 
@@ -91,13 +99,22 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
      */
     fun updateActiveVisuals(activeName: String?, connected: Boolean, connecting: Boolean) {
         if (!isAdded) return
+        // true غير ملي كاين فعلا ملف نشط (متصل أو فطور الاتصال) - هادشي
+        // كيفرق بين "ما كاين حتى اتصال" (كلشي START) و"كاين اتصال بملف
+        // معين" (هو STOP/RUNNING، الباقي زر START ديالهم كيتخبى مؤقتا
+        // بلا ما يتخبى الـRow نفسو - شوف التعديل الأخير المطلوب).
+        val hasActiveFile = activeName != null && (connected || connecting)
         for ((name, row) in rowViews) {
             val rowCard = row.findViewById<View>(R.id.rowConfigItem)
             val actionBg = row.findViewById<View>(R.id.btnConfigAction)
             val actionIcon = row.findViewById<ImageView>(R.id.imgConfigAction)
             val isThisOne = name == activeName
-            if (isThisOne && (connected || connecting)) {
+            if (isThisOne && hasActiveFile) {
+                // الملف النشط: ظاهر + زر STOP/RUNNING ظاهر وقابل للضغط.
                 rowCard.setBackgroundResource(R.drawable.shape_card_active)
+                actionBg.visibility = View.VISIBLE
+                actionBg.isEnabled = true
+                actionBg.isClickable = true
                 if (connected) {
                     // 🟢 أخضر = توقف بعد نجاح الاتصال.
                     actionBg.setBackgroundResource(R.drawable.shape_config_action_green)
@@ -108,9 +125,23 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
                     actionBg.setBackgroundResource(R.drawable.shape_config_action_red)
                     actionIcon.setImageResource(R.drawable.ic_stop_square)
                 }
-            } else {
-                // 🔵 أزرق = تشغيل (لا اتصال حالي بهاد الملف).
+            } else if (hasActiveFile) {
+                // ملف آخر (ماشي هو النشط) وكاين اتصال جاري بملف مختلف:
+                // الـRow بحالو يبقى ظاهر بالكامل (الاسم، الميتا، Edit/Share/
+                // Delete...) - كنخبيو غير زر ▶️ START ديالو مؤقتا (INVISIBLE
+                // كيخلي نفس المكان محجوز باش التصميم مايهزش)، وكنعطلو
+                // الضغط عليه باش ما يمكنش يبدا اتصال ثاني بملف تاني وملف
+                // واحد ديجا خدام.
                 rowCard.setBackgroundResource(R.drawable.shape_card_alt)
+                actionBg.visibility = View.INVISIBLE
+                actionBg.isEnabled = false
+                actionBg.isClickable = false
+            } else {
+                // ما كاين حتى ملف نشط: 🔵 أزرق = START ظاهر للجميع.
+                rowCard.setBackgroundResource(R.drawable.shape_card_alt)
+                actionBg.visibility = View.VISIBLE
+                actionBg.isEnabled = true
+                actionBg.isClickable = true
                 actionBg.setBackgroundResource(R.drawable.shape_config_action_blue)
                 actionIcon.setImageResource(R.drawable.ic_play)
             }
