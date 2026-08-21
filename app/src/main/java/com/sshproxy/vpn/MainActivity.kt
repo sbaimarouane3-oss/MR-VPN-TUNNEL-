@@ -337,7 +337,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         val crashLogPath = File(applicationContext.filesDir, "vpn_native_crash.txt").absolutePath
-        CrashGuard.installIfPossible(crashLogPath)
+        // FIX: خاصنا نقراو أي كراش باقي من الجلسة السابقة قبل ما نديرو
+        // installIfPossible() ديال الجلسة الحالية - حيت install() (فالجزء
+        // native) كيكتب سطر تأكيد ("crash guard installed successfully")
+        // فنفس هاد الملف بمجرد ما يتركب الـguard. قبل هاد التصحيح، كنا
+        // كنديرو install() أولا ثم كنقراو الملف - فكنا كنلقاو دايما محتوى
+        // (السطر لي هو ذاتو كتب install() منذ شوية)، وكنفسروه غلط كأنه
+        // كراش حقيقي فكل فتح للتطبيق. دابا: نقراو وننظفو الملف أولا (أي
+        // حاجة فيه جاية من كراش حقيقي فالجلسة اللي فاتت)، وبعد ذلك غير
+        // نركبو الـguard ديال هاد الجلسة الجديدة.
         try {
             val crashFile = File(crashLogPath)
             if (crashFile.exists() && crashFile.length() > 0) {
@@ -353,6 +361,7 @@ class MainActivity : AppCompatActivity() {
                 crashFile.delete()
             }
         } catch (_: Throwable) { }
+        CrashGuard.installIfPossible(crashLogPath)
 
         Thread.setDefaultUncaughtExceptionHandler { _, e ->
             LogManager.add(applicationContext, "FATAL (uncaught): ${e.javaClass.simpleName}: ${e.message}")
