@@ -258,7 +258,12 @@ class SshVpnService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         requestId = intent?.getLongExtra(EXTRA_REQUEST_ID, requestId) ?: requestId
         if (intent?.action == ACTION_DISCONNECT) {
+            // STOP must invalidate every pending/active reconnect immediately.
             stopRequested = true
+            reconnectGeneration++
+            reconnectDebounceJob?.cancel()
+            reconnectDebounceJob = null
+            reconnecting = false
             stopVpn()
             return START_NOT_STICKY
         }
@@ -1005,6 +1010,10 @@ class SshVpnService : VpnService() {
         if (reconnecting) return
         reconnecting = true
         val myGeneration = ++reconnectGeneration
+        if (stopRequested || !vpnActive) {
+            reconnecting = false
+            return
+        }
         if (firstReconnectFailureAt == 0L) firstReconnectFailureAt = System.currentTimeMillis()
         broadcastStatus(STATE_RECONNECTING)
         log("Reconnecting...")
@@ -1091,10 +1100,11 @@ class SshVpnService : VpnService() {
                 if (success) break
             }
 
-            if (success) {
+            // Never publish READY after STOP invalidated this reconnect.
+            if (success && vpnActive && !stopRequested && myGeneration == reconnectGeneration) {
                 firstReconnectFailureAt = 0L
                 broadcastStatus(STATE_READY)
-            } else if (vpnActive && !stopRequested && myGeneration == reconnectGeneration) {
+            } else if (!success && vpnActive && !stopRequested && myGeneration == reconnectGeneration) {
                 val elapsed = System.currentTimeMillis() - firstReconnectFailureAt
                 if (elapsed >= MAX_AUTO_RECONNECT_WINDOW_MS) {
                     // Stop retrying silently forever - after a full hour of
@@ -1124,6 +1134,10 @@ class SshVpnService : VpnService() {
         if (reconnecting) return
         reconnecting = true
         val myGeneration = ++reconnectGeneration
+        if (stopRequested || !vpnActive) {
+            reconnecting = false
+            return
+        }
         if (firstReconnectFailureAt == 0L) firstReconnectFailureAt = System.currentTimeMillis()
         broadcastStatus(STATE_RECONNECTING)
         log("Reconnecting...")
@@ -1176,7 +1190,7 @@ class SshVpnService : VpnService() {
                 if (success) break
             }
 
-            if (success) {
+            if (success && vpnActive && !stopRequested && myGeneration == reconnectGeneration) {
                 firstReconnectFailureAt = 0L
                 broadcastStatus(STATE_READY)
                 startXrayPingMonitor()
@@ -1443,7 +1457,12 @@ class SshVpnService : VpnService() {
         vpnStopped = true
 
         vpnActive = false
+        stopRequested = true
+        // Invalidate any smart-reconnect coroutine that is still unwinding.
+        reconnectGeneration++
         reconnectDebounceJob?.cancel()
+        reconnectDebounceJob = null
+        reconnecting = false
         cleanupResources()
         if (finalState == STATE_FAILED) {
             // سطر log الخطأ الحقيقي (Server Unreachable...) اتسجل ديجا قبل
