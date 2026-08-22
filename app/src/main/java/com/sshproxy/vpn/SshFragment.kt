@@ -110,13 +110,4 @@ class SshFragment : Fragment(R.layout.fragment_ssh) {
 
         (requireActivity() as? MainActivity)?.onSshFragmentReady(this)
     }
-    fun setConfigEditMode(editing: Boolean) {
-        if (!::btnNewConfig.isInitialized) return
-        if (editing) {
-            btnNewConfig.text = "✏️ EDIT CONFIG"
-        } else {
-            btnNewConfig.text = "+ NEW CONFIG"
-        }
-    }
-
 }

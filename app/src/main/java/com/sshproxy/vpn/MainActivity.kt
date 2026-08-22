@@ -1201,7 +1201,6 @@ class MainActivity : AppCompatActivity() {
                 ).show()
                 editingConfigOriginalName = null
                 editingConfigOwnerVerified = false
-                sshFragment?.setConfigEditMode(false)
                 UnlockedConfigCache.remove(savedFileName)
                 configFragment?.refreshList()
                 updateConnectionSummary()
@@ -1251,11 +1250,8 @@ class MainActivity : AppCompatActivity() {
         configFragment?.updateActiveVisuals(null, false, false)
         editingConfigOriginalName = originalName
         editingConfigOwnerVerified = true
-        sshFragment?.setConfigEditMode(true)
-        // Edit mode: load values only into the temporary UI state.
-        // Do not write to manualFieldsPrefs here. Saving before SAVE was causing
-        // edited configs to reappear after app restart.
-        restoreFieldsForEditOnly(fields)
+        applyFieldsToManualPrefs(fields)
+        restoreManualFields()
         updateImportUiState()
         findViewById<ViewPager2>(R.id.viewPager).currentItem = 0
     }
@@ -1925,7 +1921,6 @@ class MainActivity : AppCompatActivity() {
                 persistImportedConfigActive(false)
                 editingConfigOriginalName = null
                 editingConfigOwnerVerified = false
-                sshFragment?.setConfigEditMode(false)
                 configFragment?.updateActiveVisuals(null, connected, connecting)
                 updateImportUiState()
                 Toast.makeText(this, "Imported config removed", Toast.LENGTH_SHORT).show()
@@ -2692,14 +2687,4 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_LAST_SAVED_CONFIG_FILE = "lastLoadedConfigFileName"
         private const val KEY_LAST_CONFIG_WAS_IMPORTED = "lastConfigWasImported"
     }
-
-    /**
-     * Loads edit values only into temporary edit state.
-     * This intentionally avoids writing to manualFieldsPrefs before SAVE.
-     */
-    private fun restoreFieldsForEditOnly(fields: Map<String, Any?>) {
-        // The edit values are handled by the SSH settings UI state.
-        // Do not persist here; persistence happens only on SAVE.
-    }
-
 }
