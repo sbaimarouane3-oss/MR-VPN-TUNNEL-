@@ -406,7 +406,7 @@ class SshVpnService : VpnService() {
                         stopVpn()
                         return@launch
                     }
-                    connect(host, port, user, pass, proxyHost, proxyPort, payload, usePayload, useSsl, sni, udpgwEnabled, udpgwPort, maskLogs, securityNotice, connectEpoch)
+                    connect(host, port, user, pass, proxyHost, proxyPort, payload, usePayload, useSsl, sni, udpgwEnabled, udpgwPort, maskLogs, connectEpoch, securityNotice)
                     break // reached "Connection Established" with no issues
                 } catch (e: Throwable) {
                     if (!isSessionCurrent(connectEpoch)) return@launch
