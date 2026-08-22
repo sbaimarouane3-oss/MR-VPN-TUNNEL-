@@ -1201,6 +1201,7 @@ class MainActivity : AppCompatActivity() {
                 ).show()
                 editingConfigOriginalName = null
                 editingConfigOwnerVerified = false
+                sshFragment?.setConfigEditMode(false)
                 UnlockedConfigCache.remove(savedFileName)
                 configFragment?.refreshList()
                 updateConnectionSummary()
@@ -1250,6 +1251,7 @@ class MainActivity : AppCompatActivity() {
         configFragment?.updateActiveVisuals(null, false, false)
         editingConfigOriginalName = originalName
         editingConfigOwnerVerified = true
+        sshFragment?.setConfigEditMode(true)
         applyFieldsToManualPrefs(fields)
         restoreManualFields()
         updateImportUiState()
@@ -1921,6 +1923,7 @@ class MainActivity : AppCompatActivity() {
                 persistImportedConfigActive(false)
                 editingConfigOriginalName = null
                 editingConfigOwnerVerified = false
+                sshFragment?.setConfigEditMode(false)
                 configFragment?.updateActiveVisuals(null, connected, connecting)
                 updateImportUiState()
                 Toast.makeText(this, "Imported config removed", Toast.LENGTH_SHORT).show()
