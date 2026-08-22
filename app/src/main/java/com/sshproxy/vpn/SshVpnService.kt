@@ -29,6 +29,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicLong
 import com.sshproxy.vpn.xray.ParsedProxyConfig
 import com.sshproxy.vpn.xray.XrayConfigBuilder
 import com.sshproxy.vpn.xray.XrayCoreManager
@@ -172,29 +173,10 @@ class SshVpnService : VpnService() {
     @Volatile private var reconnecting = false
     @Volatile private var stopRequested = false  // true once the user taps Disconnect manually (even mid-CONNECTING)
     @Volatile private var networkAvailable = true
-
-    // === Session epoch (race-condition fix: Stop vs Reconnect) ===
-    // Bumped (1) at the very start of every fresh ACTION_CONNECT in
-    // onStartCommand, and (2) at the very start of stopVpn(). Every
-    // long-running/async connect or reconnect coroutine captures the
-    // epoch value that was current when IT started ("myEpoch"/"epoch")
-    // and re-checks it against the live `sessionEpoch` field after every
-    // suspend point (delay, blocking I/O, network calls) before doing
-    // anything that touches shared state (session/socksServer/tunFd/
-    // vpnActive) or emits CONNECTING / RECONNECTING / READY.
-    //
-    // Because it is a plain @Volatile Long compared with `!=`, a stale
-    // coroutine started before the bump can NEVER be confused for the
-    // current one again, no matter how many Stop/Start cycles race with
-    // it - this is what makes old reconnect attempts unable to affect a
-    // newer session, and guarantees a Stop tap invalidates everything
-    // in flight immediately (the bump itself is a single synchronous
-    // field write, visible to every other thread right away).
-    @Volatile private var sessionEpoch: Long = 0L
-
-    /** Thrown internally to unwind a connect()/connectXray() attempt that discovered mid-flight it is no longer the current session (Stop was pressed, or a newer Start superseded it). Never logged as an error and never triggers a retry - the owning epoch is already gone. */
-    private class StaleSessionException : Exception()
     @Volatile private var reconnectGeneration = 0 // invalidates stale reconnect attempts when a newer trigger arrives
+    // Monotonically increasing session token. Every START creates a new epoch and every STOP invalidates the old one.
+    // This prevents an in-flight SSH/Xray operation from resurrecting a session after the user stopped it.
+    private val sessionEpoch = AtomicLong(0L)
     @Volatile private var autoReconnectSuspended = false // true once the 1-hour retry ceiling is hit
     @Volatile private var firstReconnectFailureAt: Long = 0L
 
@@ -280,28 +262,20 @@ class SshVpnService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         requestId = intent?.getLongExtra(EXTRA_REQUEST_ID, requestId) ?: requestId
         if (intent?.action == ACTION_DISCONNECT) {
-            // stopVpn() itself bumps sessionEpoch as its very first
-            // statement - this immediately invalidates every in-flight
-            // connect/reconnect attempt (see the epoch checks throughout
-            // this file) before anything else in stopVpn() even runs.
+            // Invalidate the current session BEFORE cleanup. Any in-flight
+            // connect/reconnect that finishes later is now stale and cannot
+            // publish CONNECTING/READY or replace the new session.
             stopRequested = true
             stopVpn()
             return START_NOT_STICKY
         }
 
-        // Fresh, clean start: bump the session epoch BEFORE touching
-        // anything else. This does two things at once - (1) it makes this
-        // the new "current" session so every broadcast/state-mutation below
-        // is allowed through the epoch checks, and (2) it immediately
-        // invalidates any coroutine left over from a previous session that
-        // is still mid-flight (e.g. a reconnect attempt that raced with a
-        // Stop and is still executing, or one that simply hadn't noticed
-        // stopRequested yet) - it can never again touch vpnActive/session/
-        // socksServer/tunFd or emit CONNECTING/RECONNECTING/READY, no
-        // matter what it does after this point.
-        val myEpoch = ++sessionEpoch
-
+        // Every new CONNECT is a new logical session. This is intentionally
+        // done before launching any background work so an older CONNECT/
+        // reconnect cannot win a race against this one.
+        val connectEpoch = sessionEpoch.incrementAndGet()
         stopRequested = false
+        vpnStopped = false
         autoReconnectSuspended = false
         firstReconnectFailureAt = 0L
         socksPort = (20000..59000).random()
@@ -309,7 +283,6 @@ class SshVpnService : VpnService() {
         if (session != null || tunFd != null || socksServer != null) {
             cleanupResources()
         }
-        vpnStopped = false
 
         // بلا تاگ برتوكول (logTag مازال ماتحددش لهاد الجلسة الجديدة) -
         // بحال HTTP Custom لي كيبين معلومات الجهاز/الشبكة مرة وحدة فبداية
@@ -330,7 +303,7 @@ class SshVpnService : VpnService() {
             logTag = "XRAY"
 
             log("Starting Service...")
-            emitState(myEpoch, STATE_CONNECTING)
+            broadcastStatus(STATE_CONNECTING)
 
             try {
                 startForegroundNotif()
@@ -342,30 +315,20 @@ class SshVpnService : VpnService() {
 
             scope.launch {
                 var attempt = 0
-                while (isActive) {
-                    // A newer Connect or a Stop has already superseded this
-                    // whole loop - stop immediately, no log spam, no retry.
-                    if (myEpoch != sessionEpoch) return@launch
+                while (isActive && isSessionCurrent(connectEpoch)) {
                     try {
+                        ensureSessionCurrent(connectEpoch)
                         log("Preparing VPN Engine...")
                         if (!ensureNativeLoaded(applicationContext)) {
                             log("ERROR: Native Library Load Failed. (${nativeLoadError ?: "unknown"})")
-                            if (myEpoch == sessionEpoch) {
-                                broadcastStatus(STATE_FAILED)
-                                stopVpn()
-                            }
+                            broadcastStatus(STATE_FAILED)
+                            stopVpn()
                             return@launch
                         }
-                        connectXray(parsedJson, myEpoch)
+                        connectXray(parsedJson, connectEpoch)
                         break // وصلنا لـ"Connection Established" بلا مشاكل
-                    } catch (e: StaleSessionException) {
-                        // This attempt discovered mid-flight that it's no
-                        // longer current (Stop pressed, or a newer Connect
-                        // started) - already torn down inside connectXray(),
-                        // nothing more to do here.
-                        return@launch
                     } catch (e: Throwable) {
-                        if (myEpoch != sessionEpoch) return@launch
+                        if (!isSessionCurrent(connectEpoch)) return@launch
                         log(classifyConnectError(e))
 
                         if (stopRequested) {
@@ -411,7 +374,7 @@ class SshVpnService : VpnService() {
         }.toString().let { if (it == "SSH") "SSH-DIRECT" else it }
 
         log("Starting Service...")
-        emitState(myEpoch, STATE_CONNECTING)
+        broadcastStatus(STATE_CONNECTING)
 
         lastHost = host; lastPort = port; lastUser = user; lastPass = pass
         lastProxyHost = proxyHost; lastProxyPort = proxyPort
@@ -433,28 +396,20 @@ class SshVpnService : VpnService() {
 
         scope.launch {
             var attempt = 0
-            while (isActive) {
-                // A newer Connect or a Stop has already superseded this
-                // whole loop - stop immediately, no log spam, no retry.
-                if (myEpoch != sessionEpoch) return@launch
+            while (isActive && isSessionCurrent(connectEpoch)) {
                 try {
+                    ensureSessionCurrent(connectEpoch)
                     log("Preparing VPN Engine...")
                     if (!ensureNativeLoaded(applicationContext)) {
                         log("ERROR: Native Library Load Failed. (${nativeLoadError ?: "unknown"})")
-                        if (myEpoch == sessionEpoch) {
-                            broadcastStatus(STATE_FAILED)
-                            stopVpn()
-                        }
+                        broadcastStatus(STATE_FAILED)
+                        stopVpn()
                         return@launch
                     }
-                    connect(host, port, user, pass, proxyHost, proxyPort, payload, usePayload, useSsl, sni, udpgwEnabled, udpgwPort, maskLogs, securityNotice, myEpoch)
+                    connect(host, port, user, pass, proxyHost, proxyPort, payload, usePayload, useSsl, sni, udpgwEnabled, udpgwPort, maskLogs, securityNotice, connectEpoch)
                     break // reached "Connection Established" with no issues
-                } catch (e: StaleSessionException) {
-                    // Already torn down inside connect() - this attempt is
-                    // no longer current, nothing more to do here.
-                    return@launch
                 } catch (e: Throwable) {
-                    if (myEpoch != sessionEpoch) return@launch
+                    if (!isSessionCurrent(connectEpoch)) return@launch
                     log(classifyConnectError(e))
 
                     // Full teardown before any retry: disconnects the failed
@@ -526,21 +481,16 @@ class SshVpnService : VpnService() {
         useSsl: Boolean = false, sni: String = "",
         udpgwEnabled: Boolean = false, udpgwPort: Int = 7300,
         maskLogs: Boolean = false,
+        epoch: Long,
         // كيتحسب مرة وحدة قبل ما تبدا حلقة الـretry (شوف onStartCommand) -
         // ماشي فكل محاولة. نتيجة SecurityCheck.quickScan() (root/emulator/
         // debugger) ماغاديش تتبدل بين محاولة ومحاولة كل بضع مئات ديال الـms،
         // فإعادة فحص 10 ملفات + Build.FINGERPRINT فكل محاولة (بلا فايدة
         // حقيقية) هي واحد من الأسباب لي كانت كتخلي سيرفر خاطئ/منتهي يستهلك
         // CPU بزاف بلا داعي.
-        securityNotice: String? = null,
-        // Session epoch this attempt was launched under - see the
-        // sessionEpoch field. Re-checked after every suspend point below;
-        // if it no longer matches the live sessionEpoch, a Stop (or a
-        // newer Connect) has superseded this attempt and it must unwind
-        // via StaleSessionException without touching shared state or
-        // emitting CONNECTING/RECONNECTING/READY.
-        epoch: Long = sessionEpoch
+        securityNotice: String? = null
     ) {
+        ensureSessionCurrent(epoch)
         val usesProxy = proxyHost.isNotBlank() && (proxyHost != host || proxyPort != port)
         val protocolLabel = StringBuilder("SSH").apply {
             if (useSsl) append("-TLS")
@@ -590,6 +540,7 @@ class SshVpnService : VpnService() {
             // على شبكة بطيئة، وفنفس الوقت مازالت قصيرة باش ما تخليش
             // سيرفر ميت يعطل الـretry loop بزاف.
             s.connect(8000)
+            ensureSessionCurrent(epoch)
             log("SSH Connect Completed. (${SystemClock.elapsedRealtime() - sshStart} ms)")
         } catch (e: Throwable) {
             log("SSH Connect Failed after ${SystemClock.elapsedRealtime() - sshStart} ms")
@@ -607,18 +558,6 @@ class SshVpnService : VpnService() {
             throw e
         }
         log("SSH Authentication Successful. (total ${SystemClock.elapsedRealtime() - connectTotalStart} ms)")
-
-        // s.connect(8000) above is a real blocking network call, easily the
-        // slowest step in this whole function - a Stop tap (or a fresh
-        // Connect superseding this one) is very likely to land exactly
-        // during it. Check right away: if this attempt is no longer
-        // current, tear the just-authenticated session down ourselves and
-        // unwind quietly instead of going on to build SOCKS5/TUN for a
-        // session nobody wants anymore.
-        if (epoch != sessionEpoch) {
-            try { s.disconnect() } catch (_: Throwable) { }
-            throw StaleSessionException()
-        }
 
         socksServer = MiniSocks5Server(s, "127.0.0.1", socksPort) { msg -> log(msg) }
         socksServer?.start()
@@ -644,17 +583,6 @@ class SshVpnService : VpnService() {
             udpgwLocalPort = 0
         }
 
-        // Same reasoning as above - UDPGW setup and everything since the
-        // last check took real time (SSH round-trips). Re-check before
-        // spending an establish() call (creates a real system VPN
-        // interface) on an attempt nobody wants anymore.
-        if (epoch != sessionEpoch) {
-            try { socksServer?.stop() } catch (_: Throwable) { }
-            try { s.disconnect() } catch (_: Throwable) { }
-            socksServer = null
-            throw StaleSessionException()
-        }
-
         log("Creating VPN Interface...")
         val builder = Builder()
             .setSession("SSH-Proxy-Payload")
@@ -671,25 +599,9 @@ class SshVpnService : VpnService() {
             builder.addDisallowedApplication(packageName)
         } catch (_: Exception) { }
 
-        val establishedFd = builder.establish()
-
-        // Final gate, right before this attempt would flip vpnActive to
-        // true and become "the" active connection. establish() itself can
-        // briefly block, so this is checked one last time immediately
-        // after it returns - if we lost the race, close everything we just
-        // built (TUN interface included) instead of letting a stale
-        // attempt resurrect the tunnel out from under a Stop that already
-        // completed.
-        if (epoch != sessionEpoch) {
-            try { establishedFd?.close() } catch (_: Throwable) { }
-            try { socksServer?.stop() } catch (_: Throwable) { }
-            try { s.disconnect() } catch (_: Throwable) { }
-            socksServer = null
-            throw StaleSessionException()
-        }
-
-        tunFd = establishedFd
+        tunFd = builder.establish()
         val fd = tunFd?.fd ?: throw IllegalStateException("VPN Interface establish() returned null")
+        ensureSessionCurrent(epoch)
 
         log("VPN Interface Created.")
         vpnActive = true
@@ -707,7 +619,7 @@ class SshVpnService : VpnService() {
         // smartReconnect() never touches it.
         scope.launch(Dispatchers.IO) {
             var firstRun = true
-            while (vpnActive) {
+            while (vpnActive && sessionEpoch.get() == epoch && !stopRequested) {
                 val rc = nativeStartTunnel(
                     fd, "127.0.0.1", socksPort, 1500,
                     if (udpgwLocalPort > 0) "gw" else "udp",
@@ -727,8 +639,9 @@ class SshVpnService : VpnService() {
         }
 
         log("Tunnel Started Successfully.")
+        ensureSessionCurrent(epoch)
         log("Connection Established.")
-        emitState(epoch, STATE_READY)
+        broadcastStatus(STATE_READY, epoch)
 
         // SSH can report "connected" even though real internet isn't passing
         // through the tunnel. Like HTTP Custom's 200 OK ping, we run a real
@@ -739,10 +652,11 @@ class SshVpnService : VpnService() {
         // Process.killProcess), instead of leaving the user staring at
         // "DISCONNECT" while the internet doesn't actually work.
         scope.launch(Dispatchers.IO) {
+            val monitorEpoch = epoch
             var consecutiveFailures = 0
-            while (vpnActive && epoch == sessionEpoch) {
+            while (vpnActive && sessionEpoch.get() == monitorEpoch && !stopRequested) {
                 delay(6000)
-                if (!vpnActive || epoch != sessionEpoch) break
+                if (!vpnActive || sessionEpoch.get() != monitorEpoch || stopRequested) break
                 if (reconnecting) continue // a reconnect is already running
 
                 // Ping is only a quality indicator here, never a trigger on
@@ -770,7 +684,7 @@ class SshVpnService : VpnService() {
                         // reconnect, since the ping already proves traffic
                         // is flowing again.
                         networkAvailable = true
-                        emitState(epoch, STATE_READY)
+                        broadcastStatus(STATE_READY, monitorEpoch)
                     }
                 } else {
                     consecutiveFailures++
@@ -783,7 +697,7 @@ class SshVpnService : VpnService() {
                     // UI-facing status, never touches the SSH session.
                     if (!hasUsableNetwork()) {
                         if (networkAvailable) networkAvailable = false
-                        emitState(epoch, STATE_WAITING_NETWORK)
+                        broadcastStatus(STATE_WAITING_NETWORK, monitorEpoch)
                     }
                     // Allow a long run of consecutive ping timeouts (like
                     // HTTP Custom) before even re-checking the session -
@@ -808,7 +722,8 @@ class SshVpnService : VpnService() {
      * TUN interface وnativeStartTunnel كيبقاو بحالهم بلا تبديل - Xray غير
      * كيعوض الجزء اللي كان كيبني الـSOCKS5 المحلي (SSH session + MiniSocks5Server).
      */
-    private suspend fun connectXray(parsedConfigJson: String, epoch: Long = sessionEpoch) {
+    private suspend fun connectXray(parsedConfigJson: String, epoch: Long) {
+        ensureSessionCurrent(epoch)
         log("Protocol: V2Ray/Xray")
         log("Parsing Config...")
 
@@ -856,15 +771,8 @@ class SshVpnService : VpnService() {
         if (!started) {
             throw java.io.IOException("Xray core failed to start / SOCKS5 not ready")
         }
+        ensureSessionCurrent(epoch)
         log("SOCKS5 Proxy Ready.")
-
-        // XrayCoreManager.start() above can take real time - re-check
-        // before spending an establish() call on an attempt nobody wants
-        // anymore.
-        if (epoch != sessionEpoch) {
-            try { XrayCoreManager.stop() } catch (_: Throwable) { }
-            throw StaleSessionException()
-        }
 
         log("Creating VPN Interface...")
         val builder = Builder()
@@ -882,20 +790,9 @@ class SshVpnService : VpnService() {
             builder.addDisallowedApplication(packageName)
         } catch (_: Exception) { }
 
-        val establishedFd = builder.establish()
-
-        // Final gate, right before this attempt would flip vpnActive to
-        // true. Checked once more immediately after establish() returns -
-        // if we lost the race, close everything we just built instead of
-        // resurrecting a tunnel a completed Stop already tore down.
-        if (epoch != sessionEpoch) {
-            try { establishedFd?.close() } catch (_: Throwable) { }
-            try { XrayCoreManager.stop() } catch (_: Throwable) { }
-            throw StaleSessionException()
-        }
-
-        tunFd = establishedFd
+        tunFd = builder.establish()
         val fd = tunFd?.fd ?: throw IllegalStateException("VPN Interface establish() returned null")
+        ensureSessionCurrent(epoch)
 
         log("VPN Interface Created.")
         vpnActive = true
@@ -905,7 +802,7 @@ class SshVpnService : VpnService() {
         // إلا رجع بلا ما vpnActive تكون false (خروج غير متوقع).
         scope.launch(Dispatchers.IO) {
             var firstRun = true
-            while (vpnActive) {
+            while (vpnActive && sessionEpoch.get() == epoch && !stopRequested) {
                 val rc = nativeStartTunnel(
                     fd, "127.0.0.1", socksPort, 1500,
                     "udp", "127.0.0.1", 0
@@ -943,7 +840,7 @@ class SshVpnService : VpnService() {
         }
         if (!networkOk) {
             log("ERROR: No Network Available.")
-            emitState(epoch, STATE_WAITING_NETWORK)
+            broadcastStatus(STATE_WAITING_NETWORK)
             throw java.io.IOException("No usable network")
         }
 
@@ -963,7 +860,7 @@ class SshVpnService : VpnService() {
             // stays up, Xray core stays alive until smartReconnectXray
             // itself decides to restart it.
             log("ERROR: Server Unreachable.")
-            emitState(epoch, STATE_RECONNECTING)
+            broadcastStatus(STATE_RECONNECTING)
             // ملاحظة: log("Reconnecting...") اتشال من هنا - كان كيتكرر
             // مرتين حدة حدة فالـLog. scheduleSmartReconnect(debounceMs=0)
             // تحت كينادي مباشرة smartReconnect() -> smartReconnectXray()،
@@ -975,9 +872,10 @@ class SshVpnService : VpnService() {
             return
         }
 
+        ensureSessionCurrent(epoch)
         log("Connection Established.")
-        emitState(epoch, STATE_READY)
-        startXrayPingMonitor(epoch)
+        broadcastStatus(STATE_READY, epoch)
+        startXrayPingMonitor()
     }
 
     /**
@@ -989,13 +887,14 @@ class SshVpnService : VpnService() {
      * the first time (direct success, or success after retrying from an
      * initial "Server Unreachable"), whether or not it was already running.
      */
-    private fun startXrayPingMonitor(epoch: Long = sessionEpoch) {
+    private fun startXrayPingMonitor(epoch: Long = sessionEpoch.get()) {
         if (xrayPingMonitorJob?.isActive == true) return
         xrayPingMonitorJob = scope.launch(Dispatchers.IO) {
+            val monitorEpoch = epoch
             var consecutiveFailures = 0
-            while (vpnActive && epoch == sessionEpoch) {
+            while (vpnActive && sessionEpoch.get() == monitorEpoch && !stopRequested) {
                 delay(XRAY_PING_INTERVAL_MS)
-                if (!vpnActive || epoch != sessionEpoch) break
+                if (!vpnActive || sessionEpoch.get() != monitorEpoch || stopRequested) break
                 if (reconnecting) continue
                 if (mode != MODE_XRAY) break // احتياط: reconnect بدلات الوضع
 
@@ -1012,13 +911,13 @@ class SshVpnService : VpnService() {
                     consecutiveFailures = 0
                     if (!networkAvailable) {
                         networkAvailable = true
-                        emitState(epoch, STATE_READY)
+                        broadcastStatus(STATE_READY, monitorEpoch)
                     }
                 } else {
                     consecutiveFailures++
                     if (!hasUsableNetwork()) {
                         if (networkAvailable) networkAvailable = false
-                        emitState(epoch, STATE_WAITING_NETWORK)
+                        broadcastStatus(STATE_WAITING_NETWORK, monitorEpoch)
                     }
                     if (consecutiveFailures >= 6) {
                         if (!XrayCoreManager.isRunning()) {
@@ -1070,16 +969,12 @@ class SshVpnService : VpnService() {
     private fun tryResumeSession(reason: String) {
         if (!vpnActive || stopRequested || autoReconnectSuspended) return
         if (reconnecting) return
-        // Snapshot the epoch of the session this probe belongs to. If a
-        // Stop (or a fresh Connect) supersedes it while the 600ms grace
-        // delay below is running, the epoch check after the delay catches
-        // it and this probe unwinds without touching anything.
-        val myEpoch = sessionEpoch
+        val resumeEpoch = sessionEpoch.get()
         scope.launch {
             // Give the OS a brief moment to finish settling routes/DNS after
             // a network switch before probing.
             delay(600)
-            if (!vpnActive || stopRequested || reconnecting || myEpoch != sessionEpoch) return@launch
+            if (!vpnActive || stopRequested || reconnecting || sessionEpoch.get() != resumeEpoch) return@launch
 
             val sessionAlive = if (mode == MODE_XRAY) {
                 XrayCoreManager.isRunning()
@@ -1089,15 +984,12 @@ class SshVpnService : VpnService() {
             if (sessionAlive && verifyTunnelConnectivity(4000)) {
                 // The existing SSH session survived the network change - no
                 // re-authentication, no Payload resend, nothing torn down.
-                // Re-check once more right before announcing READY: the
-                // connectivity probe itself takes real time too.
-                if (myEpoch != sessionEpoch) return@launch
                 log("Connection Established.")
-                emitState(myEpoch, STATE_READY)
+                broadcastStatus(STATE_READY, resumeEpoch)
             } else {
                 // Session is genuinely gone (or unreachable) - only now do we
                 // pay for a full reconnect.
-                scheduleSmartReconnect(reason, epoch = myEpoch)
+                scheduleSmartReconnect(reason)
             }
         }
     }
@@ -1108,13 +1000,14 @@ class SshVpnService : VpnService() {
      * can both fire close together during a network switch). Each new call
      * cancels the previous one.
      */
-    private fun scheduleSmartReconnect(reason: String, debounceMs: Long = 800, epoch: Long = sessionEpoch) {
+    private fun scheduleSmartReconnect(reason: String, debounceMs: Long = 800) {
         if (!vpnActive || stopRequested || autoReconnectSuspended) return
+        val scheduleEpoch = sessionEpoch.get()
         reconnectDebounceJob?.cancel()
         reconnectDebounceJob = scope.launch {
             if (debounceMs > 0) delay(debounceMs)
-            if (epoch != sessionEpoch || stopRequested) return@launch
-            smartReconnect(reason, epoch)
+            if (!isSessionCurrent(scheduleEpoch)) return@launch
+            smartReconnect(reason)
         }
     }
 
@@ -1132,10 +1025,9 @@ class SshVpnService : VpnService() {
      * exactly like professional VPN apps that never flicker the system's
      * VPN icon during a reconnect.
      */
-    private suspend fun smartReconnect(reason: String, epoch: Long = sessionEpoch) {
-        if (epoch != sessionEpoch || stopRequested) return // already superseded before we even started
+    private suspend fun smartReconnect(reason: String) {
         if (mode == MODE_XRAY) {
-            smartReconnectXray(reason, epoch)
+            smartReconnectXray(reason)
             return
         }
         if (!vpnActive || stopRequested) return
@@ -1143,8 +1035,9 @@ class SshVpnService : VpnService() {
         if (reconnecting) return
         reconnecting = true
         val myGeneration = ++reconnectGeneration
+        val myEpoch = sessionEpoch.get()
         if (firstReconnectFailureAt == 0L) firstReconnectFailureAt = System.currentTimeMillis()
-        emitState(epoch, STATE_RECONNECTING)
+        broadcastStatus(STATE_RECONNECTING, myEpoch)
         log("Reconnecting...")
 
         try {
@@ -1157,18 +1050,10 @@ class SshVpnService : VpnService() {
             var attempt = 0
             val maxAttempts = 6
             var success = false
-            // Track the exact objects THIS attempt creates, separately from
-            // the shared `session`/`socksServer` fields. If we later find
-            // out we're stale, we must only tear down our own objects - by
-            // then a newer, legitimate connect/reconnect may already have
-            // replaced the shared fields with a good session, and we must
-            // never touch that one.
-            var attemptSession: Session? = null
-            var attemptSocks: MiniSocks5Server? = null
 
-            while (attempt < maxAttempts && vpnActive && !stopRequested && myGeneration == reconnectGeneration && epoch == sessionEpoch) {
+            while (attempt < maxAttempts && vpnActive && !stopRequested && myGeneration == reconnectGeneration && sessionEpoch.get() == myEpoch) {
                 if (!networkAvailable) {
-                    emitState(epoch, STATE_WAITING_NETWORK)
+                    broadcastStatus(STATE_WAITING_NETWORK, myEpoch)
                     return
                 }
 
@@ -1177,12 +1062,14 @@ class SshVpnService : VpnService() {
                 // between Wi-Fi/mobile data) - we give it a short grace period
                 // and retry a few times before giving up.
                 delay(if (attempt == 0) 0L else 500L)
-                if (epoch != sessionEpoch || stopRequested) break // Stop landed during the grace delay
 
+                var attemptSession: Session? = null
+                var attemptSocks: MiniSocks5Server? = null
                 try {
                     // 2) + 3) Resend the payload and open a new SSH session
                     val jsch = JSch()
                     val s = jsch.getSession(lastUser, lastHost, lastPort)
+                    attemptSession = s
                     s.setPassword(lastPass)
                     s.setConfig("StrictHostKeyChecking", "no")
                     s.setConfig("kex", "diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha256," +
@@ -1192,17 +1079,7 @@ class SshVpnService : VpnService() {
                         log(msg)
                     })
                     s.connect(8000)
-
-                    // s.connect(8000) is a real blocking handshake - the
-                    // most likely place for a Stop tap to land. Check right
-                    // away, before this reconnect attempt claims the shared
-                    // `session`/`socksServer` fields or reports any state.
-                    if (epoch != sessionEpoch || stopRequested) {
-                        try { s.disconnect() } catch (_: Throwable) { }
-                        break
-                    }
-
-                    attemptSession = s
+                    ensureSessionCurrent(myEpoch)
                     session = s
                     log("SSH Authentication Successful.")
 
@@ -1210,8 +1087,9 @@ class SshVpnService : VpnService() {
                     // keeps working transparently since the original tunnel
                     // is still running
                     val newSocks = MiniSocks5Server(s, "127.0.0.1", socksPort) { msg -> log(msg) }
-                    newSocks.start()
                     attemptSocks = newSocks
+                    newSocks.start()
+                    ensureSessionCurrent(myEpoch)
                     socksServer = newSocks
                     log("SOCKS5 Proxy Ready.")
 
@@ -1232,52 +1110,39 @@ class SshVpnService : VpnService() {
                     // through the tunnel before declaring success (like HTTP
                     // Custom's 200 OK ping)
                     delay(400)
+                    ensureSessionCurrent(myEpoch)
                     if (verifyTunnelConnectivity()) {
+                        ensureSessionCurrent(myEpoch)
                         log("Connection Established.")
                         success = true
                     } else {
                         throw java.io.IOException("post-reconnect connectivity check failed")
                     }
                 } catch (e: Throwable) {
+                    // A Stop/new START can invalidate this attempt while the
+                    // blocking SSH handshake is still in progress. Never touch
+                    // shared session/socks references belonging to a newer
+                    // epoch; clean only the local objects created by this attempt.
+                    if (!isSessionCurrent(myEpoch)) {
+                        try { attemptSocks?.stop() } catch (_: Throwable) { }
+                        try { attemptSession?.disconnect() } catch (_: Throwable) { }
+                        return
+                    }
                     attempt++
                     log(classifyConnectError(e))
-                    try { socksServer?.stop() } catch (_: Throwable) { }
-                    try { session?.disconnect() } catch (_: Throwable) { }
-                    socksServer = null
-                    session = null
-                    attemptSession = null
-                    attemptSocks = null
+                    try { attemptSocks?.stop() } catch (_: Throwable) { }
+                    try { attemptSession?.disconnect() } catch (_: Throwable) { }
+                    if (socksServer === attemptSocks) socksServer = null
+                    if (session === attemptSession) session = null
                 }
 
                 if (success) break
             }
 
-            // Final gate before this attempt is allowed to surface as the
-            // active connection: everything above (JSch handshake, SOCKS5
-            // start, the 400ms connectivity probe) is real time during
-            // which a Stop could have landed - or, in a fast Stop-then-
-            // Start-again sequence, a newer connect() could already be the
-            // one holding `session`/`socksServer` by now. Either way, this
-            // attempt must not be allowed to announce
-            // READY/CONNECTING/RECONNECTING. We only ever tear down and
-            // clear OUR OWN objects (attemptSession/attemptSocks), and only
-            // clear the shared fields if they still point at exactly those
-            // objects - never at whatever a newer, legitimate session may
-            // have since put there.
-            if (epoch != sessionEpoch || stopRequested) {
-                if (success) {
-                    try { attemptSocks?.stop() } catch (_: Throwable) { }
-                    try { attemptSession?.disconnect() } catch (_: Throwable) { }
-                    if (session === attemptSession) session = null
-                    if (socksServer === attemptSocks) socksServer = null
-                }
-                return
-            }
-
             if (success) {
                 firstReconnectFailureAt = 0L
-                emitState(epoch, STATE_READY)
-            } else if (vpnActive && !stopRequested && myGeneration == reconnectGeneration) {
+                broadcastStatus(STATE_READY, myEpoch)
+            } else if (vpnActive && !stopRequested && myGeneration == reconnectGeneration && sessionEpoch.get() == myEpoch) {
                 val elapsed = System.currentTimeMillis() - firstReconnectFailureAt
                 if (elapsed >= MAX_AUTO_RECONNECT_WINDOW_MS) {
                     // Stop retrying silently forever - after a full hour of
@@ -1286,9 +1151,9 @@ class SshVpnService : VpnService() {
                     // has to tap Connect again to try a truly fresh start.
                     autoReconnectSuspended = true
                     log("Waiting User Action...")
-                    emitState(epoch, STATE_WAITING_USER_ACTION)
+                    broadcastStatus(STATE_WAITING_USER_ACTION, myEpoch)
                 } else {
-                    emitState(epoch, STATE_WAITING_NETWORK)
+                    broadcastStatus(STATE_WAITING_NETWORK, myEpoch)
                 }
             }
         } finally {
@@ -1301,15 +1166,15 @@ class SshVpnService : VpnService() {
      * جديد بنفس الكونفيغ (lastXrayParsedJson) على نفس socksPort - TUN
      * interface وnativeStartTunnel بلا مساس، نفس مبدأ smartReconnect() ديال SSH.
      */
-    private suspend fun smartReconnectXray(reason: String, epoch: Long = sessionEpoch) {
-        if (epoch != sessionEpoch || stopRequested) return // already superseded before we even started
+    private suspend fun smartReconnectXray(reason: String) {
         if (!vpnActive || stopRequested) return
         if (autoReconnectSuspended) return
         if (reconnecting) return
         reconnecting = true
         val myGeneration = ++reconnectGeneration
+        val myEpoch = sessionEpoch.get()
         if (firstReconnectFailureAt == 0L) firstReconnectFailureAt = System.currentTimeMillis()
-        emitState(epoch, STATE_RECONNECTING)
+        broadcastStatus(STATE_RECONNECTING, myEpoch)
         log("Reconnecting...")
 
         try {
@@ -1319,13 +1184,12 @@ class SshVpnService : VpnService() {
             val maxAttempts = 6
             var success = false
 
-            while (attempt < maxAttempts && vpnActive && !stopRequested && myGeneration == reconnectGeneration && epoch == sessionEpoch) {
+            while (attempt < maxAttempts && vpnActive && !stopRequested && myGeneration == reconnectGeneration && sessionEpoch.get() == myEpoch) {
                 if (!networkAvailable) {
-                    emitState(epoch, STATE_WAITING_NETWORK)
+                    broadcastStatus(STATE_WAITING_NETWORK, myEpoch)
                     return
                 }
                 delay(if (attempt == 0) 800 else backoffDelayMs(attempt))
-                if (epoch != sessionEpoch || stopRequested) break // Stop landed during the grace delay
 
                 try {
                     val cfg = ParsedProxyConfig.fromJson(lastXrayParsedJson)
@@ -1343,25 +1207,22 @@ class SshVpnService : VpnService() {
                         }
                     )
                     if (!started) throw java.io.IOException("Xray restart failed")
+                    ensureSessionCurrent(myEpoch)
                     log("SOCKS5 Proxy Ready.")
 
-                    // XrayCoreManager.start() above is real, blocking native
-                    // work - re-check right away, before spending the extra
-                    // 400ms probe delay and before this attempt is treated
-                    // as having claimed the (singleton) Xray core.
-                    if (epoch != sessionEpoch || stopRequested) {
-                        XrayCoreManager.stop()
-                        break
-                    }
-
                     delay(400)
+                    ensureSessionCurrent(myEpoch)
                     if (verifyTunnelConnectivity()) {
+                        ensureSessionCurrent(myEpoch)
                         log("Connection Established.")
                         success = true
                     } else {
                         throw java.io.IOException("post-reconnect connectivity check failed")
                     }
                 } catch (e: Throwable) {
+                    // Do not stop a newer Xray session if this reconnect was
+                    // invalidated by Stop or by a newer START.
+                    if (!isSessionCurrent(myEpoch)) return
                     attempt++
                     log(classifyConnectError(e))
                     XrayCoreManager.stop()
@@ -1370,32 +1231,18 @@ class SshVpnService : VpnService() {
                 if (success) break
             }
 
-            // Same reasoning as smartReconnect()'s final gate: a Stop (or a
-            // newer Connect) may have landed during the native start / probe
-            // delay above. XrayCoreManager is a process-global singleton
-            // (unlike JSch Sessions there is no separate "our own instance"
-            // to distinguish) - stopping it here mirrors exactly what
-            // cleanupResources() already does on Stop, and is a no-op/safe
-            // if it's already stopped.
-            if (epoch != sessionEpoch || stopRequested) {
-                if (success) {
-                    try { XrayCoreManager.stop() } catch (_: Throwable) { }
-                }
-                return
-            }
-
             if (success) {
                 firstReconnectFailureAt = 0L
-                emitState(epoch, STATE_READY)
-                startXrayPingMonitor(epoch)
-            } else if (vpnActive && !stopRequested && myGeneration == reconnectGeneration) {
+                broadcastStatus(STATE_READY, myEpoch)
+                startXrayPingMonitor(myEpoch)
+            } else if (vpnActive && !stopRequested && myGeneration == reconnectGeneration && sessionEpoch.get() == myEpoch) {
                 val elapsed = System.currentTimeMillis() - firstReconnectFailureAt
                 if (elapsed >= MAX_AUTO_RECONNECT_WINDOW_MS) {
                     autoReconnectSuspended = true
                     log("Waiting User Action...")
-                    emitState(epoch, STATE_WAITING_USER_ACTION)
+                    broadcastStatus(STATE_WAITING_USER_ACTION, myEpoch)
                 } else {
-                    emitState(epoch, STATE_WAITING_NETWORK)
+                    broadcastStatus(STATE_WAITING_NETWORK, myEpoch)
                 }
             }
         } finally {
@@ -1638,20 +1485,13 @@ class SshVpnService : VpnService() {
      * start/stop بزاف داخل نفس الـprocess.
      */
     private fun stopVpn(finalState: String = STATE_DISCONNECTED) {
-        // Bump the session epoch FIRST, unconditionally, before the
-        // idempotency guard below and before anything else runs. This is
-        // the actual fix for the Stop/Reconnect race: the instant Stop is
-        // requested, every in-flight connect()/connectXray()/smartReconnect
-        // attempt anywhere in the service - no matter which coroutine or
-        // network callback started it - captured an older epoch value and
-        // will now fail its next `epoch == sessionEpoch` check, so it can
-        // no longer flip vpnActive back to true, reassign session/
-        // socksServer/tunFd, or emit CONNECTING/RECONNECTING/READY. A
-        // single @Volatile field write is visible to every other thread
-        // immediately, so this takes effect before any other statement in
-        // this function even runs.
-        sessionEpoch++
+        // Invalidate the session BEFORE cleanup. This is the critical race
+        // barrier: a blocked SSH/Xray operation may finish after Stop, but
+        // its epoch is now stale and it cannot resurrect the VPN.
+        sessionEpoch.incrementAndGet()
+        reconnectGeneration++
         stopRequested = true
+        reconnectDebounceJob?.cancel()
 
         // Idempotency guard: stopVpn() can legitimately be reached from two
         // places almost simultaneously - (1) the user tapping Disconnect
@@ -1665,8 +1505,8 @@ class SshVpnService : VpnService() {
         if (vpnStopped) return
         vpnStopped = true
 
-        reconnectDebounceJob?.cancel()
         vpnActive = false
+        reconnectDebounceJob?.cancel()
         cleanupResources()
         if (finalState == STATE_FAILED) {
             // سطر log الخطأ الحقيقي (Server Unreachable...) اتسجل ديجا قبل
@@ -1770,34 +1610,24 @@ class SshVpnService : VpnService() {
         } catch (_: Throwable) { }
     }
 
-    /**
-     * Guarded status emitter for every state that a session-scoped
-     * coroutine (initial connect, retry loop, smartReconnect,
-     * tryResumeSession, ping monitors...) can produce: CONNECTING,
-     * RECONNECTING, READY, WAITING_NETWORK, WAITING_USER_ACTION.
-     *
-     * [epoch] must be the sessionEpoch value that was current when the
-     * calling coroutine/attempt started. If a newer epoch has since
-     * started (a fresh Connect) or the user tapped Stop, this is a
-     * stale/superseded attempt and the call is dropped silently - it
-     * must never be allowed to move the UI/notification backwards.
-     *
-     * DISCONNECTED and FAILED are terminal states owned exclusively by
-     * stopVpn(), which calls broadcastStatus() directly (never through
-     * this guard), so they are always delivered.
-     */
-    private fun emitState(epoch: Long, state: String) {
-        if (epoch != sessionEpoch || stopRequested) return
-        broadcastStatus(state)
+    private fun isSessionCurrent(epoch: Long): Boolean =
+        epoch == sessionEpoch.get() && !stopRequested
+
+    private fun ensureSessionCurrent(epoch: Long) {
+        if (!isSessionCurrent(epoch)) {
+            throw StaleSessionException()
+        }
     }
 
-    private fun broadcastStatus(state: String) {
-        // Safety gate: a stale reconnect/connect callback must never publish
-        // a running state after the user pressed STOP. Only terminal states
-        // from stopVpn() are allowed through while stopping.
-        if (stopRequested && state != STATE_DISCONNECTED && state != STATE_FAILED) {
-            return
-        }
+    private class StaleSessionException : Exception()
+
+    private fun broadcastStatus(state: String, epoch: Long? = null) {
+        // A stale connection attempt must never publish a state after Stop
+        // or after a newer START. DISCONNECTED/FAILED are terminal states
+        // from the current service and remain allowed.
+        if (epoch != null && epoch != sessionEpoch.get()) return
+        if (stopRequested && state != STATE_DISCONNECTED && state != STATE_FAILED) return
+
         // Persisted first (cross-process, survives the activity being
         // recreated / the app being backgrounded) so MainActivity always has
         // a real, current source of truth to sync against - never just the
@@ -1982,6 +1812,9 @@ class SshVpnService : VpnService() {
     }
 
     override fun onDestroy() {
+        stopRequested = true
+        sessionEpoch.incrementAndGet()
+        reconnectGeneration++
         try { cleanupResources() } catch (_: Throwable) { }
         try { networkCallback?.let { connectivityManager?.unregisterNetworkCallback(it) } } catch (_: Throwable) { }
         reconnectDebounceJob?.cancel()
