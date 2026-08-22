@@ -1792,6 +1792,12 @@ class SshVpnService : VpnService() {
     }
 
     private fun broadcastStatus(state: String) {
+        // Safety gate: a stale reconnect/connect callback must never publish
+        // a running state after the user pressed STOP. Only terminal states
+        // from stopVpn() are allowed through while stopping.
+        if (stopRequested && state != STATE_DISCONNECTED && state != STATE_FAILED) {
+            return
+        }
         // Persisted first (cross-process, survives the activity being
         // recreated / the app being backgrounded) so MainActivity always has
         // a real, current source of truth to sync against - never just the
