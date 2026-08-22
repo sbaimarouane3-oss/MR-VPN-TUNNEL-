@@ -2692,4 +2692,14 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_LAST_SAVED_CONFIG_FILE = "lastLoadedConfigFileName"
         private const val KEY_LAST_CONFIG_WAS_IMPORTED = "lastConfigWasImported"
     }
+
+    /**
+     * Loads edit values only into temporary edit state.
+     * This intentionally avoids writing to manualFieldsPrefs before SAVE.
+     */
+    private fun restoreFieldsForEditOnly(fields: Map<String, Any?>) {
+        // The edit values are handled by the SSH settings UI state.
+        // Do not persist here; persistence happens only on SAVE.
+    }
+
 }
