@@ -1252,8 +1252,10 @@ class MainActivity : AppCompatActivity() {
         editingConfigOriginalName = originalName
         editingConfigOwnerVerified = true
         sshFragment?.setConfigEditMode(true)
-        applyFieldsToManualPrefs(fields)
-        restoreManualFields()
+        // Edit mode: load values only into the temporary UI state.
+        // Do not write to manualFieldsPrefs here. Saving before SAVE was causing
+        // edited configs to reappear after app restart.
+        restoreFieldsForEditOnly(fields)
         updateImportUiState()
         findViewById<ViewPager2>(R.id.viewPager).currentItem = 0
     }
