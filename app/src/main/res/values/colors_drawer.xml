@@ -1,10 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- أسود قريب من خلفية التطبيق (#000000) باش يبقى القائمة متناسقة مع
-         باقي التطبيق (شاشة SSH/Log السوداء) بدل البنفسجي الصارخ. -->
+    <!-- خلفية القائمة الجانبية - نفس الأسود القريب من خلفية التطبيق. -->
     <color name="drawer_background">#0D0D0D</color>
     <color name="drawer_text">#FFFFFF</color>
-    <!-- نفس الأخضر المستعمل فزر CONNECT ومؤشر الـ Tabs، باش يبقى فيه
-         خيط لوني موحد فكامل التطبيق. -->
+
+    <!-- FIX (Dark Neon VPN Style): زدنا لون أزرق Neon مخصص للقائمة
+         الجانبية فقط (Glow، الشعار، الكاردات، الـPill) - بلا ما نمس
+         drawer_accent الأخضر القديم (مستعمل فبلايص أخرى/تصميم عام). -->
     <color name="drawer_accent">#1DB954</color>
+    <color name="drawer_neon_blue">#3AA8FF</color>
+    <color name="drawer_neon_blue_soft">#291A6EFF</color>
+    <color name="drawer_neon_blue_glow_1">#403AA8FF</color>
+    <color name="drawer_neon_blue_glow_2">#203AA8FF</color>
+    <color name="drawer_neon_blue_glow_3">#0D3AA8FF</color>
+
+    <!-- كاردات عناصر القائمة (Add/Share Proxy/Clear/Share Log/Telegram/WhatsApp) -->
+    <color name="drawer_card_bg">#141922</color>
+    <color name="drawer_card_stroke">#22303C</color>
+    <color name="drawer_card_pressed">#1C2733</color>
+
+    <!-- بادج دائري وراء أيقونات القائمة (Add/Share Proxy/Share Log) -->
+    <color name="drawer_badge_blue_bg">#263AA8FF</color>
+    <color name="drawer_badge_blue_stroke">#663AA8FF</color>
+
+    <!-- بادج أحمر خفيف لعنصر Clear (إشارة "إجراء حساس" بلا ما يبدل السلوك) -->
+    <color name="drawer_badge_red_bg">#26FF5459</color>
+    <color name="drawer_badge_red_stroke">#66FF5459</color>
+
+    <color name="drawer_subtitle">#8A97A6</color>
 </resources>
