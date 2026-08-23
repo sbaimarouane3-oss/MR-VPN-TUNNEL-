@@ -88,7 +88,12 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
             // فقط هو لي كيبين RUNNING/STOP - بلا ما نخفيو ولا نمسحو حتى
             // ملف من اللائحة.
             val activeName = activity?.activeConfigFileNameOrNull()
-            updateActiveVisuals(activeName, activity?.isConnectedNow() ?: false, activity?.isConnectingNow() ?: false)
+            updateActiveVisuals(
+                activeName,
+                activity?.isConnectedNow() ?: false,
+                activity?.isConnectingNow() ?: false,
+                activity?.isReconnectingNow() ?: false
+            )
         }
     }
 
@@ -97,13 +102,19 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
      * بلا ما تعاود تقرا الملفات من القرص. MainActivity كتناديها كل مرة
      * connected/connecting كيتبدلو فعليا.
      */
-    fun updateActiveVisuals(activeName: String?, connected: Boolean, connecting: Boolean) {
+    fun updateActiveVisuals(activeName: String?, connected: Boolean, connecting: Boolean, reconnecting: Boolean = false) {
         if (!isAdded) return
         // true غير ملي كاين فعلا ملف نشط (متصل أو فطور الاتصال) - هادشي
         // كيفرق بين "ما كاين حتى اتصال" (كلشي START) و"كاين اتصال بملف
         // معين" (هو STOP/RUNNING، الباقي زر START ديالهم كيتخبى مؤقتا
         // بلا ما يتخبى الـRow نفسو - شوف التعديل الأخير المطلوب).
-        val hasActiveFile = activeName != null && (connected || connecting)
+        // FIX (فليكر ديال الأيقونات): reconnecting (RECONNECTING/
+        // WAITING_NETWORK) خاصها تتحسب هي زادة كـ"ملف نشط" - قبل هاد
+        // الفيكس كانت كتنسى، فملي الاتصال كيدخل RECONNECTING (شبه عادي
+        // فوقت البداية أو الStop)، hasActiveFile كانت كترجع false، فكل
+        // الصفوف كانو كيرجعو للأزرق (START) لحظة وحدة قبل ما يرجعو
+        // للحالة الصحيحة - هادشي هو الفليكر.
+        val hasActiveFile = activeName != null && (connected || connecting || reconnecting)
         for ((name, row) in rowViews) {
             val rowCard = row.findViewById<View>(R.id.rowConfigItem)
             val actionBg = row.findViewById<View>(R.id.btnConfigAction)
