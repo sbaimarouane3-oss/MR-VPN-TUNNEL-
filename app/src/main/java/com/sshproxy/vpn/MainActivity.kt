@@ -564,8 +564,10 @@ class MainActivity : AppCompatActivity() {
         persistLastSavedConfigFileName(null)
         persistImportedConfigActive(false)
 
-        // 4) الحقول اليدوية (SSH/V2Ray/Shadowsocks) + Share Proxy settings.
+        // 4) الحقول اليدوية (SSH/V2Ray/Shadowsocks) + Share Proxy settings +
+        // بوكيط Edit المنفصل.
         manualFieldsPrefs().edit().clear().apply()
+        editFieldsPrefs().edit().clear().apply()
         connectionStatePrefs().edit().clear().apply()
         getSharedPreferences("proxy_share_prefs", MODE_PRIVATE).edit().clear().apply()
 
@@ -951,7 +953,7 @@ class MainActivity : AppCompatActivity() {
 
     /** Snapshot of whatever protocol/fields are currently set in SSH SETTINGS - used to build a new .ml config. */
     fun currentManualFieldsSnapshot(): Map<String, Any?> {
-        val p = manualFieldsPrefs()
+        val p = activeFieldsPrefs()
         return linkedMapOf(
             "protocol" to (p.getString("protocol", DEFAULT_PROTOCOL.label) ?: DEFAULT_PROTOCOL.label),
             "host" to (p.getString("host", "") ?: ""),
@@ -1084,6 +1086,8 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "This config belongs to another device. Create a new config instead.", Toast.LENGTH_LONG).show()
             editingConfigOriginalName = null
             editingConfigOwnerVerified = false
+            editFieldsPrefs().edit().clear().apply()
+            restoreManualFields()
             return
         }
 
@@ -1201,6 +1205,12 @@ class MainActivity : AppCompatActivity() {
                 ).show()
                 editingConfigOriginalName = null
                 editingConfigOwnerVerified = false
+                // خرجنا من وضع Edit: نمسحو edit_fields ونرجعو الحقول
+                // المعروضة فـSSH SETTINGS للسيرفر المحفوظ يدوياً (manual_fields
+                // / Choose Protocol) - بلا ما يبقى ظاهر محتوى الملف لي
+                // عدلناه دابا فالحفظ.
+                editFieldsPrefs().edit().clear().apply()
+                restoreManualFields()
                 UnlockedConfigCache.remove(savedFileName)
                 configFragment?.refreshList()
                 updateConnectionSummary()
@@ -1214,9 +1224,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** كيكتب فـ manual_fields prefs غير المفاتيح الموجودة فـ fields - بلا ما يمس أي حاجة أخرى. */
-    private fun applyFieldsToManualPrefs(fields: Map<String, Any?>) {
-        val editor = manualFieldsPrefs().edit()
+    /** كيكتب حقول الملف لي غادي يتعدل فـ edit_fields (بوكيط Edit المنفصل)
+     *  - ماشي فـ manual_fields. كنمسحو edit_fields أولا باش ما يبقاش
+     *  خليط بين ملف قديم كان يتعدل وملف جديد بدينا نعدلوه. */
+    private fun applyFieldsToEditPrefs(fields: Map<String, Any?>) {
+        editFieldsPrefs().edit().clear().apply()
+        val editor = editFieldsPrefs().edit()
         (fields["protocol"] as? String)?.let { editor.putString("protocol", it) }
         (fields["host"] as? String)?.let { editor.putString("host", it) }
         (fields["user"] as? String)?.let { editor.putString("user", it) }
@@ -1250,7 +1263,7 @@ class MainActivity : AppCompatActivity() {
         configFragment?.updateActiveVisuals(null, false, false)
         editingConfigOriginalName = originalName
         editingConfigOwnerVerified = true
-        applyFieldsToManualPrefs(fields)
+        applyFieldsToEditPrefs(fields)
         restoreManualFields()
         updateImportUiState()
         findViewById<ViewPager2>(R.id.viewPager).currentItem = 0
@@ -1516,6 +1529,21 @@ class MainActivity : AppCompatActivity() {
 
     private fun manualFieldsPrefs() = getSharedPreferences("manual_fields", Context.MODE_PRIVATE)
 
+    // FIX (Edit Config كان كيبدل بيانات "Choose Protocol" المحفوظة):
+    // بلاصة ما تكتب بيانات الملف لي كيتعدل مباشرة فوق manual_fields
+    // (اللي هي نفسها السيرفر المحفوظ يدوياً لكل بروتوكول)، عندها بوكيط
+    // خاص بيها بحالها. هكذا Edit كيقرا/كيكتب فبوكيط منفصل، وmanual_fields
+    // (منطق Choose Protocol) ما كيتلمسش خالص حتى لو المستخدم بدل حقول
+    // بزاف وهو فوضع Edit، وحتى لو ما كملش Save. الملف .ml نفسو هو لي
+    // كيتبدل من saveNewConfig() - manual_fields تبقى بحالها.
+    private fun editFieldsPrefs() = getSharedPreferences("edit_fields", Context.MODE_PRIVATE)
+
+    /** البوكيط النشط دابا فSSH SETTINGS: edit_fields ملي كنكونو فوضع Edit
+     *  (editingConfigOriginalName != null)، وإلا manual_fields (Choose
+     *  Protocol العادي) فالباقي ديال الحالات. */
+    private fun activeFieldsPrefs() =
+        if (editingConfigOriginalName != null) editFieldsPrefs() else manualFieldsPrefs()
+
     // تخزين دائم لهوية Saved Config النشط (اسم الملف فقط) - مستقل عن
     // activeConfigFileName الحالي فالذاكرة، لي كان كيتصفى عند disconnect()
     // القديم ولا عند إعادة تشغيل التطبيق. هادشي كيسمح لينا نفرقو بين
@@ -1542,7 +1570,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun restoreManualFields() {
         val f = sshFragment ?: return
-        val p = manualFieldsPrefs()
+        val p = activeFieldsPrefs()
         f.edtHost.setText(p.getString("host", ""))
         f.edtUser.setText(p.getString("user", ""))
         f.edtPass.setText(p.getString("pass", ""))
@@ -1591,35 +1619,38 @@ class MainActivity : AppCompatActivity() {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
         }
-        f.edtHost.addTextChangedListener(watcher { manualFieldsPrefs().edit().putString("host", it).apply() })
-        f.edtUser.addTextChangedListener(watcher { manualFieldsPrefs().edit().putString("user", it).apply() })
-        f.edtPass.addTextChangedListener(watcher { manualFieldsPrefs().edit().putString("pass", it).apply() })
-        f.edtProxy.addTextChangedListener(watcher { manualFieldsPrefs().edit().putString("proxy", it).apply() })
-        f.edtPayload.addTextChangedListener(watcher { manualFieldsPrefs().edit().putString("payload", it).apply() })
+        // FIX: كل هاد الـwatchers دابا كيكتبو فـactiveFieldsPrefs() - يعني
+        // edit_fields ملي كنكونو فوضع Edit، وmanual_fields (Choose Protocol)
+        // فالباقي. هكذا الكتابة فوضع Edit ما كتلمسش السيرفر المحفوظ يدوياً.
+        f.edtHost.addTextChangedListener(watcher { activeFieldsPrefs().edit().putString("host", it).apply() })
+        f.edtUser.addTextChangedListener(watcher { activeFieldsPrefs().edit().putString("user", it).apply() })
+        f.edtPass.addTextChangedListener(watcher { activeFieldsPrefs().edit().putString("pass", it).apply() })
+        f.edtProxy.addTextChangedListener(watcher { activeFieldsPrefs().edit().putString("proxy", it).apply() })
+        f.edtPayload.addTextChangedListener(watcher { activeFieldsPrefs().edit().putString("payload", it).apply() })
         f.chkUsePayload.setOnCheckedChangeListener { _, checked ->
-            manualFieldsPrefs().edit().putBoolean("usePayload", checked).apply()
+            activeFieldsPrefs().edit().putBoolean("usePayload", checked).apply()
         }
-        f.edtSni.addTextChangedListener(watcher { manualFieldsPrefs().edit().putString("sni", it).apply() })
+        f.edtSni.addTextChangedListener(watcher { activeFieldsPrefs().edit().putString("sni", it).apply() })
         f.chkUseSsl.setOnCheckedChangeListener { _, checked ->
-            manualFieldsPrefs().edit().putBoolean("useSsl", checked).apply()
+            activeFieldsPrefs().edit().putBoolean("useSsl", checked).apply()
         }
         f.chkUdpgw.setOnCheckedChangeListener { _, checked ->
-            manualFieldsPrefs().edit().putBoolean("udpgwEnabled", checked).apply()
+            activeFieldsPrefs().edit().putBoolean("udpgwEnabled", checked).apply()
         }
-        f.edtUdpgwPort.addTextChangedListener(watcher { manualFieldsPrefs().edit().putString("udpgwPort", it).apply() })
+        f.edtUdpgwPort.addTextChangedListener(watcher { activeFieldsPrefs().edit().putString("udpgwPort", it).apply() })
 
         // V2Ray: كيبقى الـJSON محفوظ ومعروض عند رجوع المستخدم لتبويب SSH
         // Settings (بحال Edit) - نفس مبدأ باقي الحقول اليدوية.
-        f.edtV2rayJson.addTextChangedListener(watcher { manualFieldsPrefs().edit().putString("v2rayJson", it).apply() })
+        f.edtV2rayJson.addTextChangedListener(watcher { activeFieldsPrefs().edit().putString("v2rayJson", it).apply() })
 
         // Shadowsocks: كل حقل كيتحفظ لوحدو باش يبقى قابل للتعديل عند رجوع
         // المستخدم لنفس البروتوكول.
-        f.edtSsServer.addTextChangedListener(watcher { manualFieldsPrefs().edit().putString("ssServer", it).apply() })
-        f.edtSsPort.addTextChangedListener(watcher { manualFieldsPrefs().edit().putString("ssPort", it).apply() })
-        f.edtSsMethod.addTextChangedListener(watcher { manualFieldsPrefs().edit().putString("ssMethod", it).apply() })
-        f.edtSsPassword.addTextChangedListener(watcher { manualFieldsPrefs().edit().putString("ssPassword", it).apply() })
+        f.edtSsServer.addTextChangedListener(watcher { activeFieldsPrefs().edit().putString("ssServer", it).apply() })
+        f.edtSsPort.addTextChangedListener(watcher { activeFieldsPrefs().edit().putString("ssPort", it).apply() })
+        f.edtSsMethod.addTextChangedListener(watcher { activeFieldsPrefs().edit().putString("ssMethod", it).apply() })
+        f.edtSsPassword.addTextChangedListener(watcher { activeFieldsPrefs().edit().putString("ssPassword", it).apply() })
         f.chkSsUdp.setOnCheckedChangeListener { _, checked ->
-            manualFieldsPrefs().edit().putBoolean("ssUdp", checked).apply()
+            activeFieldsPrefs().edit().putBoolean("ssUdp", checked).apply()
         }
     }
 
@@ -1632,7 +1663,7 @@ class MainActivity : AppCompatActivity() {
      * عليهم تلقائيا) - بلا أي تعديل فمنطق البارس أو الاتصال.
      */
     private fun showProtocolPicker() {
-        val currentProtocol = manualFieldsPrefs().getString("protocol", DEFAULT_PROTOCOL.label)
+        val currentProtocol = activeFieldsPrefs().getString("protocol", DEFAULT_PROTOCOL.label)
             ?: DEFAULT_PROTOCOL.label
 
         // Dialog مخصص (نفس أسلوب dialog_import.xml: Card بحواف مدورة +
@@ -1706,6 +1737,7 @@ class MainActivity : AppCompatActivity() {
         persistImportedConfigActive(false)
         editingConfigOriginalName = null
         editingConfigOwnerVerified = false
+        editFieldsPrefs().edit().clear().apply()
         configFragment?.updateActiveVisuals(null, connected, connecting)
         val f = sshFragment
         if (f != null) {
@@ -1921,6 +1953,8 @@ class MainActivity : AppCompatActivity() {
                 persistImportedConfigActive(false)
                 editingConfigOriginalName = null
                 editingConfigOwnerVerified = false
+                editFieldsPrefs().edit().clear().apply()
+                restoreManualFields()
                 configFragment?.updateActiveVisuals(null, connected, connecting)
                 updateImportUiState()
                 Toast.makeText(this, "Imported config removed", Toast.LENGTH_SHORT).show()
@@ -2163,7 +2197,7 @@ class MainActivity : AppCompatActivity() {
                 // البروتوكول كيتقرا مباشرة من الاختيار المخزن (Choose Protocol)
                 // بدل ما يتبنى من محتوى الحقول - كيضمن توافق تام بين الكارد
                 // وبين الحقول المبينة فعليا فالواجهة.
-                val manualProtocol = manualFieldsPrefs().getString("protocol", DEFAULT_PROTOCOL.label)
+                val manualProtocol = activeFieldsPrefs().getString("protocol", DEFAULT_PROTOCOL.label)
                     ?: DEFAULT_PROTOCOL.label
                 protocol = manualProtocol
 
@@ -2280,7 +2314,11 @@ class MainActivity : AppCompatActivity() {
         lastLogContent = ""
 
         if (activeImportedConfig == null && activeXrayConfig == null) {
-            val manualProtocol = manualFieldsPrefs().getString("protocol", DEFAULT_PROTOCOL.label)
+            // activeFieldsPrefs(): إلا كنا فوضع Edit، خاص البروتوكول يتقرا
+            // من edit_fields (نفس البوكيط لي عامرة بيه الحقول المعروضة
+            // دابا)، ماشي من manual_fields - وإلا مايتوافقش البروتوكول
+            // المقروء مع الحقول المعروضة فعليا فالشاشة.
+            val manualProtocol = activeFieldsPrefs().getString("protocol", DEFAULT_PROTOCOL.label)
                 ?: DEFAULT_PROTOCOL.label
             when (manualProtocol) {
                 "V2Ray" -> {
@@ -2369,7 +2407,7 @@ class MainActivity : AppCompatActivity() {
             }
             // ===== نهاية V2Ray/Xray - كود SSH الأصلي كيبدا هنا بلا تبديل =====
 
-            val manualProtocol = manualFieldsPrefs().getString("protocol", DEFAULT_PROTOCOL.label)
+            val manualProtocol = activeFieldsPrefs().getString("protocol", DEFAULT_PROTOCOL.label)
                 ?: DEFAULT_PROTOCOL.label
 
             if (imported != null) {
@@ -2484,7 +2522,7 @@ class MainActivity : AppCompatActivity() {
                 // useProxy كيتقرا من الاختيار المخزن ديال Choose Protocol -
                 // ماشي بالتخمين من محتوى الحقل، حيت الحقل يمكن يبقى فيه
                 // نص قديم مخبي (SSH-Direct/Payload/TLS) وماخصوش يتقرا.
-                val useProxy = manualFieldsPrefs().getBoolean("useProxy", false)
+                val useProxy = activeFieldsPrefs().getBoolean("useProxy", false)
                 val proxyText = f?.edtProxy?.text?.toString()?.trim() ?: ""
                 val proxyHost = if (useProxy && proxyText.contains(":")) {
                     proxyText.substringBeforeLast(":")
