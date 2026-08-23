@@ -1739,18 +1739,19 @@ class MainActivity : AppCompatActivity() {
         editingConfigOwnerVerified = false
         editFieldsPrefs().edit().clear().apply()
         configFragment?.updateActiveVisuals(null, connected, connecting)
-        val f = sshFragment
-        if (f != null) {
-            f.chkUsePayload.isChecked = opt.usePayload
-            f.chkUseSsl.isChecked = opt.useSsl
-            manualFieldsPrefs().edit()
-                .putString("protocol", opt.label)
-                .putBoolean("usePayload", opt.usePayload)
-                .putBoolean("useSsl", opt.useSsl)
-                .putBoolean("useProxy", opt.useProxy)
-                .apply()
-            applyProtocolFieldVisibility(f, opt)
-        }
+        manualFieldsPrefs().edit()
+            .putString("protocol", opt.label)
+            .putBoolean("usePayload", opt.usePayload)
+            .putBoolean("useSsl", opt.useSsl)
+            .putBoolean("useProxy", opt.useProxy)
+            .apply()
+        // FIX: كنستعملو restoreManualFields() هنا (ماشي غير setText جزئي)
+        // باش الحقول كلها (Host/User/Pass/V2Ray JSON/Shadowsocks...) تتعمر
+        // من manual_fields الحقيقية. قبل هاد الفيكس، إلا كنا فوضع Edit
+        // وبدلنا البروتوكول من هنا، الحقول كانت تبقى بصريا عامرة بمحتوى
+        // الملف لي كنا كنعدلو (edit_fields) - رغم أننا خرجنا من وضع Edit -
+        // لأن هاد الدالة كانت كتبدل غير الـcheckboxes، ماشي كل الحقول.
+        restoreManualFields()
         updateImportUiState()
         updateConnectionSummary()
     }
