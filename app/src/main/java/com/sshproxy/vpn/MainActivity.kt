@@ -1382,7 +1382,27 @@ class MainActivity : AppCompatActivity() {
 
     /** زر ■ فـCONFIG tab: نفس disconnect() ديال SSH SETTINGS (لي كيمسح activeConfigFileName بحالو - سلوك قديم بلا تغيير) + تحديث لائحة CONFIG. */
     fun disconnectConfigFile() {
-        disconnect()
+        // FIX (Config play → connect → reconnect → stop فقط): قبل هاد
+        // الفيكس، disconnect() كانت كتبعث ACTION_DISCONNECT بـ نفس
+        // serviceRequestId القديم بلا تبديل. المشكل: كاين فارق زمني
+        // طبيعي (race) بين الضغط على STOP ولحظة ما service فعليا كيوصلها
+        // الـIntent ويدير stopRequested=true. فهاد الفارق، محاولة
+        // smartReconnect() قديمة خدامة فالخلفية كانت تقدر تبعث broadcast
+        // (RECONNECTING/READY...) بنفس requestId القديم - و statusReceiver
+        // كان كيقبلها لأنها كتطابق serviceRequestId الحالي (لي مابدلش)،
+        // فالحالة كانت ترجع تبان Connecting/Reconnecting لحظة بعد الStop،
+        // قبل ما توصل أخيرا STATE_DISCONNECTED الحقيقية. الحل: نبدلو
+        // serviceRequestId لواحد جديد هنا (نفس المبدأ المستعمل ديجا فـ
+        // connectConfigFile() ملي كيبدل من كونفيغ لآخر) - أي broadcast
+        // قديم كيحمل الـid القديم كيرفض تلقائيا من statusReceiver، وغير
+        // STATE_DISCONNECTED النهائية (لي غادي تحمل نفس الـid الجديد
+        // بمجرد ما service توصلها هاد Intent ديال ACTION_DISCONNECT) هي
+        // لي غادي تتقبل. هاد التعديل خاص بـzر Stop ديال CONFIG tab فقط -
+        // ماكيمسش disconnect() العامة (SSH SETTINGS) ولا أي مسار آخر.
+        val newRequestId = System.nanoTime()
+        serviceRequestId = newRequestId
+        pendingServiceRequestId = null
+        disconnect(newRequestId)
         configFragment?.updateActiveVisuals(null, false, false)
     }
 
