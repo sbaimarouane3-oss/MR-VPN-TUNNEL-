@@ -80,6 +80,12 @@
     </LinearLayout>
 
     <!-- القائمة الجانبية -->
+    <!-- FIX (Dark Neon VPN Style - UI فقط): itemBackground جديد
+         (bg_nav_item_card) كيعطي شكل "كارد" لكل عنصر بحال التصميم
+         المرجعي، itemIconSize كبرات لـ40dp باش تدي البادجات الدائرية
+         الجداد (ic_nav_badge_*) بلا ما تتقص، والمسافات (insets/padding)
+         تزادت شوية باش الكاردات تبان مرتاحة. المنطق (setNavigationItemSelectedListener
+         فـMainActivity.setupDrawer()) ماتبدلش خالص. -->
     <com.google.android.material.navigation.NavigationView
         android:id="@+id/navigationView"
         android:layout_width="wrap_content"
@@ -88,15 +94,19 @@
         android:background="@color/drawer_background"
         app:headerLayout="@layout/nav_header"
         app:itemIconTint="@null"
+        app:itemIconSize="40dp"
         app:itemTextColor="@color/drawer_text"
-        app:itemIconPadding="24dp"
+        app:itemTextAppearance="@style/TextAppearance.MaterialComponents.Subtitle2"
+        app:itemIconPadding="16dp"
         app:itemRippleColor="@color/drawer_item_ripple"
+        app:itemBackground="@drawable/bg_nav_item_card"
         app:itemShapeAppearanceOverlay="@style/ShapeAppearanceOverlay.NavItem"
-        app:itemShapeInsetStart="12dp"
-        app:itemShapeInsetEnd="12dp"
-        app:itemShapeInsetTop="4dp"
-        app:itemShapeInsetBottom="4dp"
-        app:itemHorizontalPadding="16dp"
+        app:itemShapeInsetStart="14dp"
+        app:itemShapeInsetEnd="14dp"
+        app:itemShapeInsetTop="6dp"
+        app:itemShapeInsetBottom="6dp"
+        app:itemHorizontalPadding="14dp"
+        app:itemVerticalPadding="10dp"
         app:menu="@menu/drawer_menu" />
 
 </androidx.drawerlayout.widget.DrawerLayout>
