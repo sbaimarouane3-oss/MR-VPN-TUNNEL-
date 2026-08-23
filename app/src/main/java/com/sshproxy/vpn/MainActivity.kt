@@ -193,6 +193,13 @@ class MainActivity : AppCompatActivity() {
     private var pendingIncomingUri: Uri? = null
 
     private var drawerLayout: DrawerLayout? = null
+    // FIX (Dark Neon VPN Style - UI فقط): مراجع اختيارية لـpill حالة
+    // الاتصال الجديد فرأس القائمة الجانبية (nav_header.xml). كتتزامن
+    // فقط داخل applyConnectButtonState() (نفس المكان لي كيزامن زر
+    // Connect وCONFIG tab ديجا) - سطر عرض بحت، بلا أي مساس بمنطق
+    // الاتصال. nullable حتى ما تصاوبش أي مشكل إلا الـheader تبدل مستقبلا.
+    private var navStatusDot: View? = null
+    private var navStatusText: TextView? = null
 
     private var lastLogContent = ""
     private var hadRealNativeCrashThisLaunch = false // gates Share Log's crash diagnostics section - see shareLog()
@@ -443,6 +450,14 @@ class MainActivity : AppCompatActivity() {
         // الطريقة الأكيدة باش الأيقونات الأصلية (تليجرام الأزرق، واتساب
         // الأخضر...) تبان بألوانها الحقيقية.
         navView.itemIconTintList = null
+
+        // FIX (Dark Neon VPN Style - UI فقط): جيب مراجع الـpill الجديد
+        // مرة وحدة هنا - غير عرض بصري، بلا أي تأثير على منطق الدروار.
+        try {
+            val header = navView.getHeaderView(0)
+            navStatusDot = header?.findViewById(R.id.imgNavStatusDot)
+            navStatusText = header?.findViewById(R.id.txtNavStatus)
+        } catch (_: Throwable) { }
 
         findViewById<View>(R.id.btnMenu).setOnClickListener {
             drawer.openDrawer(androidx.core.view.GravityCompat.START)
@@ -2080,8 +2095,33 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * FIX (Dark Neon VPN Style - UI فقط): كتبدل غير لون النقطة ونص الـ
+     * pill الصغير فرأس القائمة الجانبية حسب نفس الحقول (connected/
+     * connecting/reconnectingUi/failedUi) لي كتقرا applyConnectButtonState()
+     * ديجا - بلا أي قراءة/كتابة جديدة لأي حالة اتصال، غير عرض بصري.
+     */
+    private fun updateNavStatusPill() {
+        val dot = navStatusDot ?: return
+        val label = navStatusText ?: return
+        val (text, colorRes) = when {
+            connecting -> "Connecting..." to R.color.state_connecting
+            reconnectingUi -> "Reconnecting..." to R.color.state_connecting
+            connected -> "Connected" to R.color.state_success
+            failedUi -> "Connection Failed" to R.color.state_error
+            else -> "Disconnected" to R.color.state_idle
+        }
+        label.text = text
+        label.setTextColor(ContextCompat.getColor(this, colorRes))
+        dot.backgroundTintList = ContextCompat.getColorStateList(this, colorRes)
+    }
+
     private fun applyConnectButtonState() {
         configFragment?.updateActiveVisuals(activeConfigFileName, connected, connecting, reconnectingUi)
+        // FIX (Dark Neon VPN Style - UI فقط): تزامن pill حالة الاتصال
+        // فرأس القائمة الجانبية - قبل أي return مبكر باش يبقى صحيح حتى
+        // لو sshFragment ماكانش موجود حاليا (تبويب آخر مفتوح).
+        updateNavStatusPill()
         val f = sshFragment ?: return
         f.btnConnect.isEnabled = true
         // الزر دائري وفيه نص START/STOP (بدل الأيقونة القديمة) - بطلب
