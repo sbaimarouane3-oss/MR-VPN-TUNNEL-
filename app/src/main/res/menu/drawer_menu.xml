@@ -1,38 +1,59 @@
 <?xml version="1.0" encoding="utf-8"?>
-<menu xmlns:android="http://schemas.android.com/apk/res/android">
+<!--
+    FIX (Dark Neon VPN Style - UI فقط): نفس الـids/العناوين/الترتيب
+    القديمين بالضبط (nav_add, nav_share_proxy, nav_clear, nav_sharelog,
+    nav_telegram, nav_whatsapp) - MainActivity.setupDrawer() ماتبدلاتش
+    خالص وبقات كتخدم بحالها. غير الأيقونات تبدلات لنسخ "badge" دائرية
+    Neon (ic_nav_badge_*)، وزدنا app:actionLayout كـchevron زخرفي بحت
+    على اليمين (ماكيمسش الضغط على الصف - شوف nav_item_chevron.xml).
+-->
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
 
-    <item
-        android:id="@+id/nav_add"
-        android:icon="@drawable/ic_add"
-        android:title="Add" />
+    <group android:id="@+id/nav_group_actions">
+        <item
+            android:id="@+id/nav_add"
+            android:icon="@drawable/ic_nav_badge_add"
+            android:title="Add"
+            app:actionLayout="@layout/nav_item_chevron" />
 
-    <item
-        android:id="@+id/nav_share_proxy"
-        android:icon="@drawable/ic_wifi_share"
-        android:title="Share Proxy" />
+        <item
+            android:id="@+id/nav_share_proxy"
+            android:icon="@drawable/ic_nav_badge_share_proxy"
+            android:title="Share Proxy"
+            app:actionLayout="@layout/nav_item_chevron" />
 
-    <!-- جديد: كيمسح كل حاجة محفوظة (Saved Config, Import Code, حقول يدوية,
-         Share Proxy settings...) ويرجع التطبيق لحالة أول تشغيل. مربوط فـ
-         MainActivity عبر R.id.nav_clear -> confirmClearAllData(). -->
-    <item
-        android:id="@+id/nav_clear"
-        android:icon="@android:drawable/ic_menu_delete"
-        android:title="Clear" />
+        <!-- جديد: كيمسح كل حاجة محفوظة (Saved Config, Import Code, حقول
+             يدوية, Share Proxy settings...) ويرجع التطبيق لحالة أول
+             تشغيل. مربوط فـ MainActivity عبر R.id.nav_clear ->
+             confirmClearAllData(). -->
+        <item
+            android:id="@+id/nav_clear"
+            android:icon="@drawable/ic_nav_badge_clear"
+            android:title="Clear"
+            app:actionLayout="@layout/nav_item_chevron" />
 
-    <item
-        android:id="@+id/nav_sharelog"
-        android:icon="@drawable/ic_share"
-        android:title="Share Log" />
+        <item
+            android:id="@+id/nav_sharelog"
+            android:icon="@drawable/ic_nav_badge_sharelog"
+            android:title="Share Log"
+            app:actionLayout="@layout/nav_item_chevron" />
+    </group>
 
-    <!-- Telegram/WhatsApp تحت فالأسفل بطلب المستخدم -->
-    <item
-        android:id="@+id/nav_telegram"
-        android:icon="@drawable/ic_telegram"
-        android:title="Telegram" />
+    <!-- Telegram/WhatsApp تحت فالأسفل بطلب المستخدم - مجموعة منفصلة
+         باش NavigationView يرسم divider تلقائي حسب Material Design. -->
+    <group android:id="@+id/nav_group_social">
+        <item
+            android:id="@+id/nav_telegram"
+            android:icon="@drawable/ic_nav_badge_telegram"
+            android:title="Telegram"
+            app:actionLayout="@layout/nav_item_chevron" />
 
-    <item
-        android:id="@+id/nav_whatsapp"
-        android:icon="@drawable/ic_whatsapp"
-        android:title="WhatsApp" />
+        <item
+            android:id="@+id/nav_whatsapp"
+            android:icon="@drawable/ic_nav_badge_whatsapp"
+            android:title="WhatsApp"
+            app:actionLayout="@layout/nav_item_chevron" />
+    </group>
 
 </menu>
