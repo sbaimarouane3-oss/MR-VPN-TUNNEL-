@@ -1414,6 +1414,7 @@ class MainActivity : AppCompatActivity() {
     fun activeConfigFileNameOrNull(): String? = activeConfigFileName
     fun isConnectedNow(): Boolean = connected
     fun isConnectingNow(): Boolean = connecting
+    fun isReconnectingNow(): Boolean = reconnectingUi
 
     /** بلا Toast/ديالوغ "Replace؟" ديال saveImportedConfig/saveXrayConfig - كنمسحو بصمت قبل ما نرجعو لحقول يدوية. */
     private fun clearActiveImportedConfigSilently() {
@@ -2060,7 +2061,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun applyConnectButtonState() {
-        configFragment?.updateActiveVisuals(activeConfigFileName, connected, connecting)
+        configFragment?.updateActiveVisuals(activeConfigFileName, connected, connecting, reconnectingUi)
         val f = sshFragment ?: return
         f.btnConnect.isEnabled = true
         // الزر دائري وفيه نص START/STOP (بدل الأيقونة القديمة) - بطلب
