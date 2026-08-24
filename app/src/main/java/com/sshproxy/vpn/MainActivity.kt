@@ -2636,10 +2636,31 @@ class MainActivity : AppCompatActivity() {
     private fun disconnect(requestId: Long = serviceRequestId) {
         pendingConfigConnectJob?.cancel()
         pendingConfigConnectJob = null
+        // FIX (نفس مشكل CONFIG tab، دابا مطبق هنا زادة): إلا كان الكولر
+        // مابدلش serviceRequestId قبل ما ينادي disconnect() (يعني هادي
+        // ضغطة Stop عادية - requestId لي دخل للفانكسيون كيطابق
+        // serviceRequestId الحالي)، خاصنا نبدلو serviceRequestId هنا
+        // لواحد جديد قبل ما نصيفطو ACTION_DISCONNECT. بلا هاد التبديل،
+        // أي broadcast قديم (RECONNECTING/WAITING_NETWORK...) جاي من
+        // smartReconnect() فالخلفية بنفس الـid القديم كان كيتقبل من
+        // statusReceiver (حيت كيطابق serviceRequestId اللي مابدلش)،
+        // وكان كيرجع الواجهة لـ"Reconnecting..." رغم الضغط على Stop -
+        // فكانت خاصة ضغطة ثانية باش يتوقف فعلا. إلا كان الكولر ديجا بدل
+        // serviceRequestId قبل ما ينادينا (بحال connectConfigFile/
+        // إعادة الاتصال بكونفيغ آخر - requestId المدخل كيبقى القديم
+        // عمدا)، هنا كنخليوه كيفما هو بلا ما نمسو serviceRequestId
+        // الجديد لي ديجا تبدل بصح من طرف الكولر.
+        val effectiveRequestId = if (requestId == serviceRequestId) {
+            val newId = System.nanoTime()
+            serviceRequestId = newId
+            newId
+        } else {
+            requestId
+        }
         try {
             val intent = Intent(this, SshVpnService::class.java).apply {
                 action = SshVpnService.ACTION_DISCONNECT
-                putExtra(SshVpnService.EXTRA_REQUEST_ID, requestId)
+                putExtra(SshVpnService.EXTRA_REQUEST_ID, effectiveRequestId)
             }
             startService(intent)
             connected = false
