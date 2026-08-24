@@ -316,7 +316,15 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
         val ctx = context ?: return
         val activity = requireActivity() as? MainActivity ?: return
 
-        if (activity.isConfigFileActive(entry.displayName) && (activity.isConnectedNow() || activity.isConnectingNow())) {
+        // FIX: كان ناقص isReconnectingNow() هنا - فملي الملف كيدخل
+        // RECONNECTING (connected=false, connecting=false,
+        // reconnectingUi=true) بعد قطع شبكة، هاد الشرط كان كيرجع false،
+        // فالضغط على زر التوقف (⏹) ماكانش كيوقف الملف، بل كيكمل للكود
+        // تحت اللي كيبدا محاولة CONNECT جديدة - وهادشي هو اللي كان
+        // كيبين كـ"Connecting..." بدل التوقف، وكان محتاج ضغطة ثانية.
+        if (activity.isConfigFileActive(entry.displayName) &&
+            (activity.isConnectedNow() || activity.isConnectingNow() || activity.isReconnectingNow())
+        ) {
             activity.disconnectConfigFile()
             return
         }
