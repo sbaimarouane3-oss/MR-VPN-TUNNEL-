@@ -54,7 +54,7 @@
             android:layout_width="32dp"
             android:layout_height="1dp"
             android:layout_marginEnd="8dp"
-            android:background="@color/drawer_neon_purple" />
+            android:background="@color/drawer_neon_blue" />
 
         <TextView
             android:layout_width="wrap_content"
@@ -68,7 +68,7 @@
             android:layout_width="32dp"
             android:layout_height="1dp"
             android:layout_marginStart="8dp"
-            android:background="@color/drawer_neon_purple" />
+            android:background="@color/drawer_neon_blue" />
 
     </LinearLayout>
 
