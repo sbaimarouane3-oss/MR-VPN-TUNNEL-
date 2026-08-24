@@ -1,32 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-    FIX (Dark Neon VPN Style - UI فقط، بلا أي كود جديد هنا): تصميم
-    جديد للرأس ديال القائمة الجانبية بناءً على الصورة المرجعية -
-    شعار أكبر بحلقة/glow أزرق Neon، اسم التطبيق بخط أوضح، subtitle،
-    و pill صغير لحالة الاتصال (imgNavStatusDot + txtNavStatus).
-    الـpill هاذي كتتزامن مع حالة الاتصال الحقيقية من MainActivity
-    (applyConnectButtonState() - نفس المكان لي كيزامن زر Connect
-    وCONFIG tab ديجا) - سطر إضافي بسيط، بلا أي مساس بمنطق الاتصال
-    نفسو. الـids الجداد (imgNavStatusDot/txtNavStatus) اختياريين:
-    إلا مالقاهومش MainActivity (findViewById يرجع null) التطبيق
-    كيكمل يخدم عادي بلا أي كراش.
--->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
     android:gravity="center_horizontal"
-    android:background="@color/drawer_background"
+    android:background="@drawable/bg_drawer_background"
     android:paddingStart="20dp"
     android:paddingEnd="20dp"
-    android:paddingTop="32dp"
-    android:paddingBottom="24dp">
+    android:paddingTop="26dp"
+    android:paddingBottom="22dp">
 
-    <!-- شعار داخل حلقة Neon + glow خلفي (طبقات فـbg_nav_logo_glow) -->
     <FrameLayout
-        android:layout_width="96dp"
-        android:layout_height="96dp">
+        android:layout_width="132dp"
+        android:layout_height="132dp">
 
         <View
             android:layout_width="match_parent"
@@ -34,12 +20,14 @@
             android:background="@drawable/bg_nav_logo_glow" />
 
         <ImageView
-            android:layout_width="88dp"
-            android:layout_height="88dp"
+            android:id="@+id/imgNavLogo"
+            android:layout_width="116dp"
+            android:layout_height="116dp"
             android:layout_gravity="center"
-            android:background="@null"
-            android:src="@drawable/ic_app_logo"
-            android:scaleType="centerInside"
+            android:background="@android:color/transparent"
+            android:src="@drawable/drawer_logo_transparent"
+            android:scaleType="fitCenter"
+            android:adjustViewBounds="true"
             android:contentDescription="@string/app_name" />
 
     </FrameLayout>
@@ -47,48 +35,67 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
+        android:layout_marginTop="10dp"
         android:text="MR VPN TUNNEL"
         android:textColor="@color/drawer_text"
         android:textSize="19sp"
         android:textStyle="bold"
-        android:letterSpacing="0.04"
+        android:letterSpacing="0.045"
         android:gravity="center" />
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="3dp"
-        android:text="Secure SSH • VPN"
-        android:textColor="@color/drawer_subtitle"
-        android:textSize="12sp"
-        android:letterSpacing="0.02" />
-
-    <!-- Pill صغير لحالة الاتصال - كيتزامن مع applyConnectButtonState() -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="14dp"
+        android:layout_marginTop="2dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <View
+            android:layout_width="32dp"
+            android:layout_height="1dp"
+            android:layout_marginEnd="8dp"
+            android:background="@color/drawer_neon_purple" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Secure SSH • VPN"
+            android:textColor="@color/drawer_subtitle"
+            android:textSize="12sp"
+            android:letterSpacing="0.025" />
+
+        <View
+            android:layout_width="32dp"
+            android:layout_height="1dp"
+            android:layout_marginStart="8dp"
+            android:background="@color/drawer_neon_purple" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="13dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:background="@drawable/bg_nav_status_pill">
 
         <View
             android:id="@+id/imgNavStatusDot"
-            android:layout_width="7dp"
-            android:layout_height="7dp"
+            android:layout_width="8dp"
+            android:layout_height="8dp"
             android:background="@drawable/shape_nav_status_dot" />
 
         <TextView
             android:id="@+id/txtNavStatus"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="7dp"
+            android:layout_marginStart="8dp"
             android:text="Disconnected"
             android:textColor="@color/drawer_subtitle"
             android:textSize="11sp"
             android:textStyle="bold"
-            android:letterSpacing="0.02" />
+            android:letterSpacing="0.025" />
 
     </LinearLayout>
 
