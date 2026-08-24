@@ -1,24 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-    Neon glow خلف شعار التطبيق فـnav_header.xml - Android مايدعمش blur
-    حقيقي فـshape drawable، فكنولدو نفس الإحساس بـ3 دوائر متراكبة
-    (layer-list) بأقطار متفاوتة وشفافية كتنقص كل ما كبر القطر - نفس
-    مبدأ "radial glow" فوتوشوب لكن بـXML بسيط بلا أي تأثير على الأداء.
--->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:width="132dp" android:height="132dp" android:gravity="center">
-        <shape android:shape="oval">
-            <solid android:color="@color/drawer_neon_blue_glow_3" />
-        </shape>
+    <item android:width="176dp" android:height="176dp" android:gravity="center">
+        <shape android:shape="oval"><solid android:color="@color/drawer_neon_blue_glow_3" /></shape>
     </item>
-    <item android:width="104dp" android:height="104dp" android:gravity="center">
-        <shape android:shape="oval">
-            <solid android:color="@color/drawer_neon_blue_glow_2" />
-        </shape>
+    <item android:width="150dp" android:height="150dp" android:gravity="center">
+        <shape android:shape="oval"><solid android:color="@color/drawer_neon_blue_glow_2" /></shape>
     </item>
-    <item android:width="80dp" android:height="80dp" android:gravity="center">
-        <shape android:shape="oval">
-            <solid android:color="@color/drawer_neon_blue_glow_1" />
-        </shape>
+    <item android:width="120dp" android:height="120dp" android:gravity="center">
+        <shape android:shape="oval"><solid android:color="@color/drawer_neon_blue_glow_1" /></shape>
     </item>
 </layer-list>
