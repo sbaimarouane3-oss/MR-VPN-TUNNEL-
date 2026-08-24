@@ -559,6 +559,11 @@ class MainActivity : AppCompatActivity() {
             .setMessage("This will permanently delete all saved configs, imported config, manual fields, and share-proxy settings, and disconnect if connected. This cannot be undone.")
             .setPositiveButton("Delete") { _, _ -> clearAllAppDataAndResetToFirstLaunch() }
             .setNegativeButton("Cancel", null)
+            .create()
+            .apply {
+            setCanceledOnTouchOutside(false)
+            setCancelable(false)
+            }
             .show()
     }
 
