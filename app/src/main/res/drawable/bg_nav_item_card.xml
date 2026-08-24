@@ -1,22 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    itemBackground ديال NavigationView (نفس الشكل يتطبق على كل عنصر
+    فـdrawer_menu.xml - الـinsets (itemShapeInset*) اللي محددين فـ
+    activity_main.xml هوما لي كيعطيو المسافة بين كل كارد والي بعدو).
+    3 حالات فقط: مفعل (activated - غير theoretical هنا حيت مافيهاش
+    عنصر "محدد" بشكل دائم فهاد القائمة)، مضغوط (pressed - فيدباك بصري
+    وقت الضغط)، وعادي (كارد ثابت بخلفية وstroke خفيفين - نفس روح
+    التصميم المرجعي المرسل).
+-->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:state_checked="true">
+    <item android:state_activated="true">
         <shape android:shape="rectangle">
-            <gradient android:angle="0" android:startColor="#0878F9" android:endColor="#0A4E9A" />
-            <corners android:radius="12dp" />
-            <stroke android:width="1dp" android:color="#249BFF" />
+            <solid android:color="@color/drawer_neon_blue_soft" />
+            <corners android:radius="14dp" />
+            <stroke android:width="1dp" android:color="@color/drawer_neon_blue" />
         </shape>
     </item>
     <item android:state_pressed="true">
         <shape android:shape="rectangle">
-            <solid android:color="#162C42" />
-            <corners android:radius="12dp" />
+            <solid android:color="@color/drawer_card_pressed" />
+            <corners android:radius="14dp" />
+            <stroke android:width="1dp" android:color="@color/drawer_card_stroke" />
         </shape>
     </item>
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="@android:color/transparent" />
-            <corners android:radius="12dp" />
+            <solid android:color="@color/drawer_card_bg" />
+            <corners android:radius="14dp" />
+            <stroke android:width="1dp" android:color="@color/drawer_card_stroke" />
         </shape>
     </item>
 </selector>

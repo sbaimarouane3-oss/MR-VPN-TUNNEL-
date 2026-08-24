@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:width="56dp" android:height="56dp" android:gravity="center"
+    <item android:width="40dp" android:height="40dp" android:gravity="center"
         android:drawable="@drawable/bg_nav_icon_badge_blue" />
-    <item android:width="24dp" android:height="24dp" android:gravity="center"
+    <item android:width="19dp" android:height="19dp" android:gravity="center"
         android:drawable="@drawable/ic_wifi_share" />
 </layer-list>
