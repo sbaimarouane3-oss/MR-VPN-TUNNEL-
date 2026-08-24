@@ -79,34 +79,42 @@
 
     </LinearLayout>
 
-    <!-- القائمة الجانبية -->
-    <!-- FIX (Dark Neon VPN Style - UI فقط): itemBackground جديد
-         (bg_nav_item_card) كيعطي شكل "كارد" لكل عنصر بحال التصميم
-         المرجعي، itemIconSize كبرات لـ40dp باش تدي البادجات الدائرية
-         الجداد (ic_nav_badge_*) بلا ما تتقص، والمسافات (insets/padding)
-         تزادت شوية باش الكاردات تبان مرتاحة. المنطق (setNavigationItemSelectedListener
-         فـMainActivity.setupDrawer()) ماتبدلش خالص. -->
-    <com.google.android.material.navigation.NavigationView
-        android:id="@+id/navigationView"
-        android:layout_width="320dp"
+    <!-- القائمة الجانبية: UI فقط، NavigationView يبقى بنفس id حتى يبقى منطق MainActivity كما هو. -->
+    <FrameLayout
+        android:layout_width="340dp"
         android:layout_height="match_parent"
         android:layout_gravity="start"
-        android:background="@color/drawer_background"
-        app:headerLayout="@layout/nav_header"
-        app:itemIconTint="@null"
-        app:itemIconSize="38dp"
-        app:itemTextColor="@color/drawer_text"
-        app:itemTextAppearance="@style/TextAppearance.MaterialComponents.Subtitle2"
-        app:itemIconPadding="14dp"
-        app:itemRippleColor="@color/drawer_item_ripple"
-        app:itemBackground="@drawable/bg_nav_item_card"
-        app:itemShapeAppearanceOverlay="@style/ShapeAppearanceOverlay.NavItem"
-        app:itemShapeInsetStart="12dp"
-        app:itemShapeInsetEnd="12dp"
-        app:itemShapeInsetTop="5dp"
-        app:itemShapeInsetBottom="5dp"
-        app:itemHorizontalPadding="12dp"
-        app:itemVerticalPadding="9dp"
-        app:menu="@menu/drawer_menu" />
+        android:background="@drawable/bg_drawer_background">
 
+        <com.google.android.material.navigation.NavigationView
+            android:id="@+id/navigationView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@android:color/transparent"
+            app:headerLayout="@layout/nav_header"
+            app:itemIconTint="@null"
+            app:itemIconSize="56dp"
+            app:itemTextColor="@color/drawer_text"
+            app:itemTextAppearance="@style/DrawerItemTextAppearance"
+            app:itemIconPadding="8dp"
+            app:itemRippleColor="@color/drawer_item_ripple"
+            app:itemBackground="@drawable/bg_nav_item_card"
+            app:itemShapeAppearanceOverlay="@style/ShapeAppearanceOverlay.NavItem"
+            app:itemShapeInsetStart="14dp"
+            app:itemShapeInsetEnd="14dp"
+            app:itemShapeInsetTop="2dp"
+            app:itemShapeInsetBottom="2dp"
+            app:itemHorizontalPadding="8dp"
+            app:itemVerticalPadding="3dp"
+            app:menu="@menu/drawer_menu" />
+
+        <include
+            layout="@layout/drawer_footer"
+            android:layout_width="match_parent"
+            android:layout_height="64dp"
+            android:layout_gravity="bottom"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="16dp" />
+    </FrameLayout>
 </androidx.drawerlayout.widget.DrawerLayout>
