@@ -2,17 +2,11 @@
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:width="150dp" android:height="150dp" android:gravity="center">
         <shape android:shape="oval">
-            <solid android:color="#129B4DFF" />
-        </shape>
-    </item>
-    <item android:width="126dp" android:height="126dp" android:gravity="center">
-        <shape android:shape="oval">
-            <solid android:color="#249B4DFF" />
-        </shape>
-    </item>
-    <item android:width="108dp" android:height="108dp" android:gravity="center">
-        <shape android:shape="oval">
-            <solid android:color="#3C9B4DFF" />
+            <gradient
+                android:type="radial"
+                android:gradientRadius="75dp"
+                android:centerColor="#4D9B4DFF"
+                android:endColor="#009B4DFF" />
         </shape>
     </item>
 </layer-list>
