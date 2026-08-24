@@ -37,10 +37,9 @@
             android:layout_width="88dp"
             android:layout_height="88dp"
             android:layout_gravity="center"
-            android:background="@drawable/bg_nav_logo_ring"
-            android:padding="6dp"
+            android:background="@null"
             android:src="@drawable/ic_app_logo"
-            android:scaleType="centerCrop"
+            android:scaleType="centerInside"
             android:contentDescription="@string/app_name" />
 
     </FrameLayout>
