@@ -544,6 +544,8 @@ class MainActivity : AppCompatActivity() {
                 ).show()
             }
             .setNegativeButton("Cancel", null)
+            .create()
+            .apply { setCanceledOnTouchOutside(false) }
             .show()
     }
 
@@ -963,6 +965,8 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             .setNegativeButton("Cancel", null)
+            .create()
+            .apply { setCanceledOnTouchOutside(false) }
             .show()
     }
 
@@ -1045,6 +1049,8 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             .setNegativeButton("Cancel", null)
+            .create()
+            .apply { setCanceledOnTouchOutside(false) }
             .show()
     }
 
@@ -1076,6 +1082,8 @@ class MainActivity : AppCompatActivity() {
                 saveNewConfig(name, password)
             }
             .setNegativeButton("Back") { _, _ -> showNewConfigNameDialog() }
+            .create()
+            .apply { setCanceledOnTouchOutside(false) }
             .show()
     }
 
