@@ -20,13 +20,13 @@
     android:background="@color/drawer_background"
     android:paddingStart="20dp"
     android:paddingEnd="20dp"
-    android:paddingTop="32dp"
-    android:paddingBottom="24dp">
+    android:paddingTop="24dp"
+    android:paddingBottom="18dp">
 
     <!-- شعار داخل حلقة Neon + glow خلفي (طبقات فـbg_nav_logo_glow) -->
     <FrameLayout
-        android:layout_width="96dp"
-        android:layout_height="96dp">
+        android:layout_width="88dp"
+        android:layout_height="88dp">
 
         <View
             android:layout_width="match_parent"
@@ -34,8 +34,8 @@
             android:background="@drawable/bg_nav_logo_glow" />
 
         <ImageView
-            android:layout_width="88dp"
-            android:layout_height="88dp"
+            android:layout_width="80dp"
+            android:layout_height="80dp"
             android:layout_gravity="center"
             android:background="@drawable/bg_nav_logo_ring"
             android:padding="6dp"
@@ -48,10 +48,10 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
+        android:layout_marginTop="12dp"
         android:text="MR VPN TUNNEL"
         android:textColor="@color/drawer_text"
-        android:textSize="19sp"
+        android:textSize="18sp"
         android:textStyle="bold"
         android:letterSpacing="0.04"
         android:gravity="center" />
@@ -69,7 +69,7 @@
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="14dp"
+        android:layout_marginTop="11dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:background="@drawable/bg_nav_status_pill">
