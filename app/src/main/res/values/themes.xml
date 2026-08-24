@@ -16,13 +16,6 @@
         <item name="cornerSize">14dp</item>
     </style>
 
-    <style name="DrawerItemTextAppearance" parent="TextAppearance.MaterialComponents.Subtitle1">
-        <item name="android:textSize">17sp</item>
-        <item name="android:textColor">@color/drawer_text</item>
-        <item name="android:fontFamily">sans</item>
-        <item name="android:textStyle">normal</item>
-    </style>
-
     <!-- حقول الإدخال الحديثة (Outlined) بلون أخضر عند التركيز -->
     <style name="ModernTextInputLayout" parent="Widget.MaterialComponents.TextInputLayout.OutlinedBox">
         <item name="boxStrokeColor">@color/accent_green</item>
