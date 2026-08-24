@@ -1,33 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-    itemBackground ديال NavigationView (نفس الشكل يتطبق على كل عنصر
-    فـdrawer_menu.xml - الـinsets (itemShapeInset*) اللي محددين فـ
-    activity_main.xml هوما لي كيعطيو المسافة بين كل كارد والي بعدو).
-    3 حالات فقط: مفعل (activated - غير theoretical هنا حيت مافيهاش
-    عنصر "محدد" بشكل دائم فهاد القائمة)، مضغوط (pressed - فيدباك بصري
-    وقت الضغط)، وعادي (كارد ثابت بخلفية وstroke خفيفين - نفس روح
-    التصميم المرجعي المرسل).
--->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:state_activated="true">
-        <shape android:shape="rectangle">
-            <solid android:color="@color/drawer_neon_blue_soft" />
-            <corners android:radius="14dp" />
-            <stroke android:width="1dp" android:color="@color/drawer_neon_blue" />
-        </shape>
-    </item>
     <item android:state_pressed="true">
         <shape android:shape="rectangle">
-            <solid android:color="@color/drawer_card_pressed" />
-            <corners android:radius="14dp" />
-            <stroke android:width="1dp" android:color="@color/drawer_card_stroke" />
+            <gradient android:angle="0" android:startColor="#2B1242" android:endColor="#140B21" />
+            <corners android:radius="20dp" />
+            <stroke android:width="1.5dp" android:color="#C04DFFFF" />
+        </shape>
+    </item>
+    <item android:state_activated="true">
+        <shape android:shape="rectangle">
+            <gradient android:angle="0" android:startColor="#35124F" android:endColor="#160A25" />
+            <corners android:radius="20dp" />
+            <stroke android:width="1.5dp" android:color="#A84DFFFF" />
         </shape>
     </item>
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="@color/drawer_card_bg" />
-            <corners android:radius="14dp" />
-            <stroke android:width="1dp" android:color="@color/drawer_card_stroke" />
+            <gradient android:angle="0" android:startColor="@color/drawer_card_bg" android:endColor="@color/drawer_card_bg_end" />
+            <corners android:radius="20dp" />
+            <stroke android:width="1dp" android:color="#592A78" />
         </shape>
     </item>
 </selector>

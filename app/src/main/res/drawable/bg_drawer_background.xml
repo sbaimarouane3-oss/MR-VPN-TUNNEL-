@@ -4,21 +4,43 @@
         <shape android:shape="rectangle">
             <gradient
                 android:angle="90"
-                android:startColor="#06111C"
-                android:centerColor="#071725"
-                android:endColor="#050B12" />
+                android:startColor="#080512"
+                android:centerColor="#10071D"
+                android:endColor="#05030A" />
         </shape>
     </item>
-    <item android:gravity="top|start" android:top="40dp" android:left="-120dp">
+
+    <!-- Soft violet atmosphere near the header -->
+    <item android:gravity="top|center_horizontal" android:top="-95dp">
         <shape android:shape="oval">
-            <gradient android:type="radial" android:gradientRadius="250dp" android:centerColor="#173B64" android:endColor="#00173B64" />
-            <size android:width="620dp" android:height="360dp" />
+            <gradient
+                android:type="radial"
+                android:gradientRadius="300dp"
+                android:centerColor="#4A1790"
+                android:endColor="#004A1790" />
+            <size android:width="620dp" android:height="420dp" />
         </shape>
     </item>
-    <item android:gravity="center|start" android:left="-220dp" android:top="220dp">
+
+    <item android:gravity="top|start" android:left="-170dp" android:top="120dp">
         <shape android:shape="oval">
-            <gradient android:type="radial" android:gradientRadius="220dp" android:centerColor="#0A2E50" android:endColor="#000A2E50" />
-            <size android:width="700dp" android:height="420dp" />
+            <gradient
+                android:type="radial"
+                android:gradientRadius="260dp"
+                android:centerColor="#7A28C7"
+                android:endColor="#007A28C7" />
+            <size android:width="540dp" android:height="330dp" />
+        </shape>
+    </item>
+
+    <item android:gravity="bottom|end" android:right="-210dp" android:bottom="-80dp">
+        <shape android:shape="oval">
+            <gradient
+                android:type="radial"
+                android:gradientRadius="270dp"
+                android:centerColor="#4B147E"
+                android:endColor="#004B147E" />
+            <size android:width="600dp" android:height="400dp" />
         </shape>
     </item>
 </layer-list>
