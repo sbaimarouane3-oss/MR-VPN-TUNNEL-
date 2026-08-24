@@ -11,8 +11,8 @@
     android:paddingBottom="22dp">
 
     <FrameLayout
-        android:layout_width="132dp"
-        android:layout_height="132dp">
+        android:layout_width="158dp"
+        android:layout_height="158dp">
 
         <View
             android:layout_width="match_parent"
