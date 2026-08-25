@@ -40,6 +40,7 @@ import com.google.android.material.tabs.TabLayoutMediator
 import com.sshproxy.vpn.importer.ImportCrypto
 import com.sshproxy.vpn.importer.ImportedConfig
 import com.sshproxy.vpn.importer.InvalidImportCodeException
+import org.json.JSONObject
 import com.sshproxy.vpn.importer.MlConfigFile
 import com.sshproxy.vpn.importer.MlConfigParseException
 import com.sshproxy.vpn.importer.MlConfigWeakPasswordException
@@ -1884,13 +1885,65 @@ class MainActivity : AppCompatActivity() {
         appendLog("Import Code Detected.")
         appendLog("Decrypting Configuration...")
 
-        val parsed: ImportedConfig
+        // فك التشفير + التحقق من التوقيع (fail-closed) - كنرجعو الـ
+        // plaintext JSON بحالو باش نشوفو واش هو كود SSH (h/p/u/w...)
+        // ولا كود V2Ray raw JSON (مفتاح "v2j") قبل ما نبنيو الكونفيغ.
+        val rawJson: String
         try {
-            parsed = ImportCrypto.verifyAndDecrypt(code)
+            rawJson = ImportCrypto.verifyAndDecryptRaw(code)
         } catch (e: InvalidImportCodeException) {
             appendLog("ERROR: Invalid Configuration.")
             showInvalidCodeDialog()
             return
+        } catch (e: Throwable) {
+            appendLog("ERROR: Invalid Configuration.")
+            showInvalidCodeDialog()
+            return
+        }
+
+        val envelope: JSONObject
+        try {
+            envelope = JSONObject(rawJson)
+        } catch (e: Throwable) {
+            appendLog("ERROR: Invalid Configuration.")
+            showInvalidCodeDialog()
+            return
+        }
+
+        if (envelope.has("v2j")) {
+            // ===== كود MRVPN:// كيغلف V2Ray/Xray raw JSON (مفتاح "v2j") =====
+            val v2Json = envelope.optString("v2j", "")
+            val parsedXray: ParsedProxyConfig
+            try {
+                parsedXray = XrayConfigParser.parse(v2Json)
+            } catch (e: Throwable) {
+                appendLog("ERROR: Invalid Configuration.")
+                showInvalidCodeDialog(e.message ?: "Invalid V2Ray/Xray JSON config.")
+                return
+            }
+
+            if (SecureConfigStore.hasConfig(applicationContext) || XraySecureConfigStore.hasConfig(applicationContext)) {
+                AlertDialog.Builder(this)
+                    .setTitle("Replace current config?")
+                    .setMessage("A config is already saved in the app. Only one config is allowed — importing a new code will permanently delete the old one and replace it with this new one.")
+                    .setPositiveButton("Replace") { _, _ -> saveXrayConfig(parsedXray) }
+                    .setNegativeButton("Cancel", null)
+                    .create()
+                    .apply {
+                        setCanceledOnTouchOutside(false)
+                        setCancelable(false)
+                    }
+                    .show()
+            } else {
+                saveXrayConfig(parsedXray)
+            }
+            return
+        }
+
+        // ===== كود MRVPN:// عادي (SSH: h/p/u/w...) - نفس المسار الأصلي بلا تبديل =====
+        val parsed: ImportedConfig
+        try {
+            parsed = ImportedConfig.fromJson(rawJson)
         } catch (e: Throwable) {
             appendLog("ERROR: Invalid Configuration.")
             showInvalidCodeDialog()
