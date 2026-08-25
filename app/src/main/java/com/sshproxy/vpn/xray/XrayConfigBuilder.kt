@@ -67,7 +67,11 @@ object XrayConfigBuilder {
         cfg.rawOutboundJson?.let {
             val ob = JSONObject(it)
             ob.put("tag", "proxy")
-            stripAllowInsecure(ob)
+            // ملاحظة: تم حذف استدعاء stripAllowInsecure(ob) عمداً.
+            // كنخلّيو allowInsecure كيفما جات فالـ JSON الأصلي (المستخدم)،
+            // حيت بعض السيرفرات (بحال VMess بـ domain fronting) محتاجينها
+            // باش يخدم TLS handshake. هادشي ماكيأثرش على السيرفرات لي
+            // ماكانو محتاجين allowInsecure أصلاً (شهادتهم صحيحة بذاتها).
             return ob
         }
 
