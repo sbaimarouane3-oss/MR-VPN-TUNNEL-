@@ -18,6 +18,26 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
 
+    <!-- خاصة بـSecurityCheck.isRooted(): بداية Android 11 (API 30)، بلا هاد
+         التصريح، getPackageInfo() على تطبيقات آخرين كترجع دايما "ماكايناش"
+         حتى لو كانو مثبتين فعلاً (package visibility restriction). هاد
+         اللائحة هي بالضبط rootManagerPackages فـSecurityCheck.kt. -->
+    <queries>
+        <package android:name="com.topjohnwu.magisk" />
+        <package android:name="eu.chainfire.supersu" />
+        <package android:name="com.noshufou.android.su" />
+        <package android:name="com.noshufou.android.su.elite" />
+        <package android:name="com.koushikdutta.superuser" />
+        <package android:name="com.thirdparty.superuser" />
+        <package android:name="com.yellowes.su" />
+        <package android:name="com.kingroot.kinguser" />
+        <package android:name="com.kingo.root" />
+        <package android:name="com.smedialink.oneclickroot" />
+        <package android:name="com.zhiqupk.root.global" />
+        <package android:name="com.alephzain.framaroot" />
+        <package android:name="me.weishu.kernelsu" />
+    </queries>
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
