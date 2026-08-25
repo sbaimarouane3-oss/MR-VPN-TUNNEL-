@@ -64,13 +64,20 @@ object UpdateManager {
      * up to date") - never on network/parse failure, which stays silent by
      * design.
      */
-    fun checkOnceAsync(context: Context, onLog: ((String) -> Unit)? = null) {
+    fun checkOnceAsync(context: Context, socksPort: Int? = null, onLog: ((String) -> Unit)? = null) {
         if (checkedThisProcess) return
         checkedThisProcess = true
         val appContext = context.applicationContext
         scope.launch {
             try {
-                val info = UpdateChecker.fetch() ?: return@launch
+                // نجربو أولاً عبر التنل (إلا كان socksPort معطى) - هادشي
+                // كيتفادى بلوكاج/بطء الشبكة الحقيقية ديال الأوبراتور
+                // (بحال Orange على بيانات الهاتف) حيت التطبيق مستثنى من
+                // الـVPN أصلاً. إلا فشلات (تنل بطيء/سيرفر ماشي جاهز بعد)،
+                // كنرجعو نجربو مباشرة عبر الشبكة الحقيقية كـfallback.
+                val info = (socksPort?.let { UpdateChecker.fetch(it) } ?: UpdateChecker.fetch())
+                    ?: UpdateChecker.fetch()
+                    ?: return@launch
                 if (info.latestVersionCode > BuildConfig.VERSION_CODE) {
                     save(appContext, info)
                     onLog?.invoke("Update Check: New Version Available.")

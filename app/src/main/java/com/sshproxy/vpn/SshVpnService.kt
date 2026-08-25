@@ -290,6 +290,17 @@ class SshVpnService : VpnService() {
         logTag = ""
         logDeviceAndNetworkInfo()
 
+        // بوابة صارمة: كنمنعو أي اتصال (SSH ولا Xray) إلا كان الجهاز
+        // مروت. كتجري قبل أي شي آخر باش ماتبداش أي محاولة اتصال حقيقية
+        // على جهاز مروت. شوف SecurityCheck.isRooted() للتفاصيل ديال
+        // المعايير المستعملة.
+        if (SecurityCheck.isRooted(applicationContext)) {
+            log("ERROR: Rooted device detected. This app is not allowed to run on rooted devices.")
+            broadcastStatus(STATE_FAILED)
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         mode = intent?.getStringExtra(EXTRA_MODE) ?: MODE_SSH
 
         // ===== V2Ray / Xray path - مستقل كامل عن كود SSH تحت =====
@@ -1640,7 +1651,7 @@ class SshVpnService : VpnService() {
             // most users have no usable internet before the VPN comes up.
             // Fully async, fully independent of the VPN itself; see
             // UpdateManager for the "never affects the tunnel" guarantees.
-            UpdateManager.checkOnceAsync(applicationContext)
+            UpdateManager.checkOnceAsync(applicationContext, socksPort)
             startProxyShareIfEnabled()
             startSpeedMonitor()
         } else {

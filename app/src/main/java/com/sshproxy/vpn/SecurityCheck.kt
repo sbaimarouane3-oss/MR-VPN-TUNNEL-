@@ -1,21 +1,31 @@
 package com.sshproxy.vpn
 
+import android.content.Context
 import android.os.Build
 import android.os.Debug
 import java.io.File
 
 /**
- * Best-effort, non-blocking security posture checks, run once when a
- * connection starts. These are simple, well-known Java/Kotlin-level
- * heuristics (debugger flag, common root binaries/paths, emulator build
- * fingerprints) - they are trivially bypassed by a determined attacker with
- * Frida/Xposed/a custom ROM, and are NOT a substitute for real anti-tamper
- * protection (which needs native/JNI-level checks, signature pinning done
- * server-side, and ideally a dedicated hardening product - e.g. Play
- * Integrity API for a production release). We only log a generic warning,
- * we never block the connection on these, so a legitimate developer running
- * this from Android Studio, or a user who has rooted their own phone for
- * unrelated reasons, is never locked out.
+ * Security posture checks, run once when a connection starts.
+ *
+ * quickScan() stays as it was: a non-blocking, best-effort notice (debugger
+ * flag, common root binaries/paths, emulator build fingerprints) that only
+ * logs a generic line and never blocks the connection.
+ *
+ * isRooted() is new and IS a hard gate: if it returns true, the caller is
+ * expected to refuse to start the VPN/tunnel entirely. It intentionally
+ * uses only the well-established, low-false-positive signals (known su
+ * binaries on disk, su reachable via PATH, known root-manager packages
+ * installed) - it deliberately does NOT use the "test-keys" build tag or
+ * other emulator/custom-ROM fingerprints, since those also fire on plenty
+ * of legitimate, non-rooted devices (custom ROMs, some OEM builds) and
+ * would lock out real users.
+ *
+ * Like any Java/Kotlin-level check, this is trivially bypassed by a
+ * determined attacker with Magisk Hide/Zygisk, Frida, or a repackaged APK.
+ * It is a basic deterrent, not real anti-tamper protection - that needs
+ * native/JNI-level checks and ideally Play Integrity API for a production
+ * release.
  */
 object SecurityCheck {
 
@@ -32,12 +42,53 @@ object SecurityCheck {
         "/su/bin/su"
     )
 
+    // كيتعمرو بيهم أشهر تطبيقات إدارة الروت. وجود واحد منهم مثبت هو دليل
+    // قوي بزاف على أن الجهاز مروت (بخلاف build tags اللي كتعطي false
+    // positives على أجهزة أصلية/custom ROM ماشي مروتة).
+    private val rootManagerPackages = listOf(
+        "com.topjohnwu.magisk",
+        "eu.chainfire.supersu",
+        "com.noshufou.android.su",
+        "com.noshufou.android.su.elite",
+        "com.koushikdutta.superuser",
+        "com.thirdparty.superuser",
+        "com.yellowes.su",
+        "com.kingroot.kinguser",
+        "com.kingo.root",
+        "com.smedialink.oneclickroot",
+        "com.zhiqupk.root.global",
+        "com.alephzain.framaroot",
+        "me.weishu.kernelsu"
+    )
+
     private fun isDebuggerAttached(): Boolean = try {
         Debug.isDebuggerConnected() || Debug.waitingForDebugger()
     } catch (_: Throwable) { false }
 
     private fun hasRootIndicator(): Boolean = try {
         rootIndicators.any { File(it).exists() }
+    } catch (_: Throwable) { false }
+
+    // كيفتش على su داخل كل المسارات المعرّفة فـ$PATH، ماشي غير المسارات
+    // الكلاسيكية المحددة فـrootIndicators - كايناين أجهزة/ROMs كيحطو su
+    // فمسار مخصوص خارج اللائحة ديال فوق.
+    private fun suInPath(): Boolean = try {
+        val pathEnv = System.getenv("PATH") ?: ""
+        pathEnv.split(":").any { dir ->
+            dir.isNotBlank() && File(dir, "su").exists()
+        }
+    } catch (_: Throwable) { false }
+
+    private fun hasRootManagerApp(context: Context): Boolean = try {
+        val pm = context.packageManager
+        rootManagerPackages.any { pkg ->
+            try {
+                pm.getPackageInfo(pkg, 0)
+                true
+            } catch (_: Exception) {
+                false
+            }
+        }
     } catch (_: Throwable) { false }
 
     private fun looksLikeEmulator(): Boolean = try {
@@ -54,10 +105,23 @@ object SecurityCheck {
      * Returns a single, generic log line if anything looks off, or null if
      * the environment looks normal. Never includes which specific check
      * fired, matching the app's "no diagnostic internals in the log" rule.
+     * Purely informational - never blocks the connection by itself.
      */
     fun quickScan(): String? {
         val suspicious = isDebuggerAttached() || hasRootIndicator() || looksLikeEmulator()
         return if (suspicious) "Security Notice: Unverified Environment." else null
     }
-}
 
+    /**
+     * Hard gate: true means the caller MUST refuse to start the VPN/tunnel.
+     * Only fires on well-established root signals (see class doc above),
+     * so it should not lock out legitimate non-rooted users.
+     */
+    fun isRooted(context: Context): Boolean {
+        return try {
+            hasRootIndicator() || suInPath() || hasRootManagerApp(context)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+}

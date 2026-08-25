@@ -39,12 +39,27 @@ object UpdateChecker {
      * failure - no network, DNS failure, GitHub down, malformed JSON,
      * missing/invalid "latest_version" - this method never throws and the
      * caller never needs a try/catch around it.
+     *
+     * [socksPort], إلا تعطى، كيخلي هاد الطلب يمشي عبر التنل (SOCKS5 محلي
+     * ديال Xray/SSH) بدل الشبكة الحقيقية مباشرة. هادشي مهم لأن التطبيق
+     * كيستثني روحو من الـVPN (addDisallowedApplication) - بلا هاد الخيار،
+     * فحص التحديث ديما كيمشي مباشرة عبر شبكة الأوبراتور (بحال Orange على
+     * بيانات الهاتف)، ولي ممكن تبلوكي GitHub raw أو تكون بطيئة بزاف
+     * وتفوت الـtimeout، بينما نفس الشبكة عبر التنل خدامة عادي.
      */
-    fun fetch(): UpdateInfo? {
+    fun fetch(socksPort: Int? = null): UpdateInfo? {
         var conn: HttpURLConnection? = null
         return try {
             val url = URL(UPDATE_JSON_URL)
-            conn = url.openConnection() as HttpURLConnection
+            conn = if (socksPort != null) {
+                val proxy = java.net.Proxy(
+                    java.net.Proxy.Type.SOCKS,
+                    java.net.InetSocketAddress("127.0.0.1", socksPort)
+                )
+                url.openConnection(proxy) as HttpURLConnection
+            } else {
+                url.openConnection() as HttpURLConnection
+            }
             conn.connectTimeout = TIMEOUT_MS
             conn.readTimeout = TIMEOUT_MS
             conn.requestMethod = "GET"
