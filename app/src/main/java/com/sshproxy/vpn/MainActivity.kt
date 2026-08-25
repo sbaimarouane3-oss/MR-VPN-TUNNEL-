@@ -1868,6 +1868,11 @@ class MainActivity : AppCompatActivity() {
                     .setMessage("A config is already saved in the app. Only one config is allowed — importing a new one will permanently delete the old one and replace it with this new one.")
                     .setPositiveButton("Replace") { _, _ -> saveXrayConfig(parsed) }
                     .setNegativeButton("Cancel", null)
+                    .create()
+                    .apply {
+                        setCanceledOnTouchOutside(false)
+                        setCancelable(false)
+                    }
                     .show()
             } else {
                 saveXrayConfig(parsed)
@@ -1898,6 +1903,11 @@ class MainActivity : AppCompatActivity() {
                 .setMessage("A config is already saved in the app. Only one config is allowed — importing a new code will permanently delete the old one and replace it with this new one.")
                 .setPositiveButton("Replace") { _, _ -> saveImportedConfig(parsed) }
                 .setNegativeButton("Cancel", null)
+                .create()
+                .apply {
+                    setCanceledOnTouchOutside(false)
+                    setCancelable(false)
+                }
                 .show()
         } else {
             saveImportedConfig(parsed)
@@ -2010,6 +2020,11 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "Imported config removed", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("Cancel", null)
+            .create()
+            .apply {
+                setCanceledOnTouchOutside(false)
+                setCancelable(false)
+            }
             .show()
     }
 
