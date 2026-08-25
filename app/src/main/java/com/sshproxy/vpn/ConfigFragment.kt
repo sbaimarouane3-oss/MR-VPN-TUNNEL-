@@ -482,6 +482,11 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
                 }
             }
             .setNegativeButton("Cancel", null)
+            .create()
+            .apply {
+                setCanceledOnTouchOutside(false)
+                setCancelable(false)
+            }
             .show()
     }
 
