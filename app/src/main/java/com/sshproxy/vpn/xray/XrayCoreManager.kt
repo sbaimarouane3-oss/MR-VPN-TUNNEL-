@@ -53,7 +53,10 @@ object XrayCoreManager {
             Thread.sleep(200)
         }
 
-        listener.onXrayLog("ERROR: Xray SOCKS5 Proxy Not Ready.")
+        listener.onXrayLog(
+            "ERROR: Xray SOCKS5 Proxy Not Ready after ${timeoutMs} ms. " +
+            "CoreRunning=${isCoreRunning()}. Check the Xray log above for the real outbound/TLS/WS error."
+        )
         stopInternal()
         return false
     }
