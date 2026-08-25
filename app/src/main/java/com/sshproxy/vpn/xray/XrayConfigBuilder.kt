@@ -54,27 +54,16 @@ object XrayConfigBuilder {
         return root.toString()
     }
 
-    /**
-     * Xray الحديثة (libv2ray v26.1.18+) حيدات "allowInsecure"/"insecure"
-     * بالكامل - أي كونفيغ فيه هاد الحقل كيطيح بخطأ "feature has been
-     * removed" حتى لو قيمتو false. الحل: نحيدو الحقل تماماً ونخليو Xray
-     * يدير التحقق العادي من الشهادة (اللي كيخدم مزيان مع سيرفرات عندها
-     * شهادة TLS صحيحة، بحال Cloudflare-fronted servers).
-     */
     private fun stripAllowInsecure(outbound: JSONObject) {
         try {
             val stream = outbound.optJSONObject("streamSettings") ?: return
-            for (key in listOf("tlsSettings", "realitySettings")) {
-                val tls = stream.optJSONObject(key) ?: continue
-                tls.remove("allowInsecure")
-                tls.remove("insecure")
-            }
+            val tls = stream.optJSONObject("tlsSettings") ?: return
+            if (tls.has("allowInsecure")) tls.remove("allowInsecure")
         } catch (_: Throwable) { }
     }
 
     private fun buildOutbound(cfg: ParsedProxyConfig): JSONObject {
-        // Xray JSON خام (استيراد كامل) - كنستعملوه بحالو، غير كنضمنو الـtag
-        // وكنحيدو allowInsecure/insecure القديمة (Xray الحديثة كترفضها).
+        // Xray JSON خام (استيراد كامل) - كنستعملوه بحالو، غير كنضمنو الـtag.
         cfg.rawOutboundJson?.let {
             val ob = JSONObject(it)
             ob.put("tag", "proxy")
@@ -207,9 +196,6 @@ object XrayConfigBuilder {
                 stream.put("tlsSettings", JSONObject().apply {
                     put("serverName", cfg.sni.ifBlank { cfg.address })
                     put("fingerprint", cfg.fingerprint.ifBlank { "chrome" })
-                    // ماكاينش allowInsecure هنا عمداً - Xray الحديثة كترفضها
-                    // بالكامل. التحقق العادي كيخدم مزيان مع سيرفرات عندها
-                    // شهادة TLS صحيحة (بحال Cloudflare-fronted).
                     if (cfg.alpn.isNotBlank()) {
                         put("alpn", JSONArray(cfg.alpn.split(",").map { it.trim() }))
                     }
