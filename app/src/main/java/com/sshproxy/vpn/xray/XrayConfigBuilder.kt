@@ -55,34 +55,30 @@ object XrayConfigBuilder {
     }
 
     /**
-     * Xray الحديثة (libv2ray) حيدات "allowInsecure" بالكامل من tlsSettings
-     * وبدلاتها بـ "verifyPeerCertByName" (vcn). كونفيغات قديمة (v2rayN,
-     * كونفيغات ملصوقة يدوياً) مازالت كتستعمل allowInsecure، فكنحولوها
-     * هنا تلقائياً باش ماتطيحش بخطأ "feature has been removed".
+     * Xray الحديثة (libv2ray v26.1.18+) حيدات "allowInsecure"/"insecure"
+     * بالكامل - أي كونفيغ فيه هاد الحقل كيطيح بخطأ "feature has been
+     * removed" حتى لو قيمتو false. الحل: نحيدو الحقل تماماً ونخليو Xray
+     * يدير التحقق العادي من الشهادة (اللي كيخدم مزيان مع سيرفرات عندها
+     * شهادة TLS صحيحة، بحال Cloudflare-fronted servers).
      */
-    private fun migrateAllowInsecure(outbound: JSONObject) {
+    private fun stripAllowInsecure(outbound: JSONObject) {
         try {
             val stream = outbound.optJSONObject("streamSettings") ?: return
             for (key in listOf("tlsSettings", "realitySettings")) {
                 val tls = stream.optJSONObject(key) ?: continue
-                if (tls.has("allowInsecure")) {
-                    val insecure = tls.optBoolean("allowInsecure", false)
-                    tls.remove("allowInsecure")
-                    // allowInsecure=true يعني "ما تتحققش من الشهادة" =
-                    // verifyPeerCertByName=false
-                    tls.put("verifyPeerCertByName", !insecure)
-                }
+                tls.remove("allowInsecure")
+                tls.remove("insecure")
             }
         } catch (_: Throwable) { }
     }
 
     private fun buildOutbound(cfg: ParsedProxyConfig): JSONObject {
         // Xray JSON خام (استيراد كامل) - كنستعملوه بحالو، غير كنضمنو الـtag
-        // وكنحولو allowInsecure القديمة لـverifyPeerCertByName الجديدة.
+        // وكنحيدو allowInsecure/insecure القديمة (Xray الحديثة كترفضها).
         cfg.rawOutboundJson?.let {
             val ob = JSONObject(it)
             ob.put("tag", "proxy")
-            migrateAllowInsecure(ob)
+            stripAllowInsecure(ob)
             return ob
         }
 
@@ -211,9 +207,9 @@ object XrayConfigBuilder {
                 stream.put("tlsSettings", JSONObject().apply {
                     put("serverName", cfg.sni.ifBlank { cfg.address })
                     put("fingerprint", cfg.fingerprint.ifBlank { "chrome" })
-                    // "allowInsecure" تحيدات من Xray الحديثة وتعوضات بـ
-                    // verifyPeerCertByName (vcn): false = بلا تحقق من الشهادة
-                    put("verifyPeerCertByName", false)
+                    // ماكاينش allowInsecure هنا عمداً - Xray الحديثة كترفضها
+                    // بالكامل. التحقق العادي كيخدم مزيان مع سيرفرات عندها
+                    // شهادة TLS صحيحة (بحال Cloudflare-fronted).
                     if (cfg.alpn.isNotBlank()) {
                         put("alpn", JSONArray(cfg.alpn.split(",").map { it.trim() }))
                     }
