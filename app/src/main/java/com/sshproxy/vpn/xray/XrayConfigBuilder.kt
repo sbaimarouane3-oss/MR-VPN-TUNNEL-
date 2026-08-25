@@ -54,11 +54,32 @@ object XrayConfigBuilder {
         return root.toString()
     }
 
-    private fun stripAllowInsecure(outbound: JSONObject) {
+    /**
+     * Xray-core الحديث (v26.2.6+) كيرفض نهائياً أي config فيه
+     * "allowInsecure" (خاصية محذوفة رسمياً من Xray). البديل المهاجَر
+     * عليه رسمياً هو "verifyPeerCertByName": كنتحققو من الشهادة
+     * بالاسم الحقيقي ديال السيرفر (cfg.address) بدل السيرفر نيم
+     * المزيف (SNI) المستعمل فـdomain fronting - هادشي كيحل مشكلة
+     * mismatch الشهادة بلا ما نعطلو التحقق كاملاً.
+     *
+     * إلا كان العنوان IP خام (بلا دومين)، ماكاينش اسم نتحققو بيه،
+     * وقتها كنكتفاو بحذف allowInsecure (تفادي crash ديال Xray)
+     * بلا verifyPeerCertByName - قد يفشل TLS إلا كانت الشهادة
+     * فعلاً غير متطابقة، لكن هادشي خارج عن تحكمنا فهاد الحالة.
+     */
+    private fun migrateAllowInsecure(outbound: JSONObject, cfg: ParsedProxyConfig) {
         try {
             val stream = outbound.optJSONObject("streamSettings") ?: return
             val tls = stream.optJSONObject("tlsSettings") ?: return
-            if (tls.has("allowInsecure")) tls.remove("allowInsecure")
+            if (!tls.has("allowInsecure")) return
+
+            val wasInsecure = tls.optBoolean("allowInsecure", false)
+            tls.remove("allowInsecure")
+
+            val isRawIp = cfg.address.matches(Regex("^\\d{1,3}(\\.\\d{1,3}){3}$"))
+            if (wasInsecure && !isRawIp && !tls.has("verifyPeerCertByName")) {
+                tls.put("verifyPeerCertByName", cfg.address)
+            }
         } catch (_: Throwable) { }
     }
 
@@ -67,11 +88,7 @@ object XrayConfigBuilder {
         cfg.rawOutboundJson?.let {
             val ob = JSONObject(it)
             ob.put("tag", "proxy")
-            // ملاحظة: تم حذف استدعاء stripAllowInsecure(ob) عمداً.
-            // كنخلّيو allowInsecure كيفما جات فالـ JSON الأصلي (المستخدم)،
-            // حيت بعض السيرفرات (بحال VMess بـ domain fronting) محتاجينها
-            // باش يخدم TLS handshake. هادشي ماكيأثرش على السيرفرات لي
-            // ماكانو محتاجين allowInsecure أصلاً (شهادتهم صحيحة بذاتها).
+            migrateAllowInsecure(ob, cfg)
             return ob
         }
 
