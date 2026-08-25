@@ -54,20 +54,15 @@ object XrayConfigBuilder {
         return root.toString()
     }
 
-    private fun stripAllowInsecure(outbound: JSONObject) {
-        try {
-            val stream = outbound.optJSONObject("streamSettings") ?: return
-            val tls = stream.optJSONObject("tlsSettings") ?: return
-            if (tls.has("allowInsecure")) tls.remove("allowInsecure")
-        } catch (_: Throwable) { }
-    }
-
     private fun buildOutbound(cfg: ParsedProxyConfig): JSONObject {
         // Xray JSON خام (استيراد كامل) - كنستعملوه بحالو، غير كنضمنو الـtag.
+        // ملاحظة: مابقيناش كنحيدو allowInsecure - بعض السيرفرات (خاصة
+        // اللي كيستعملو Domain Fronting، السيرفر الحقيقي والـSNI المعلن
+        // مختلفين) محتاجينها باش يكمل TLS handshake، وحيدها بلا علم
+        // المستخدم كان كيفشّل الاتصال بصمت مع هاد النوع ديال السيرفرات.
         cfg.rawOutboundJson?.let {
             val ob = JSONObject(it)
             ob.put("tag", "proxy")
-            stripAllowInsecure(ob)
             return ob
         }
 
