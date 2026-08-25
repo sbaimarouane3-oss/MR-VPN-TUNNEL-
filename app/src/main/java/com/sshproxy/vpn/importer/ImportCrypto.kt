@@ -43,6 +43,26 @@ internal object ImportCrypto {
      * داخلية ممكن تفيد مهاجم (زي "signature failed" مقابل "bad json").
      */
     fun verifyAndDecrypt(rawCode: String): ImportedConfig {
+        val raw = verifyAndDecryptRaw(rawCode)
+        return try {
+            ImportedConfig.fromJson(raw)
+        } catch (e: InvalidImportCodeException) {
+            throw e
+        } catch (e: Throwable) {
+            // نفس المنطق ديال قبل: أي خطأ (بما فيه JSON بصيغة V2Ray
+            // بلا مفاتيح SSH) كيتحول لنفس رسالة "كود غير صالح" الموحدة.
+            throw InvalidImportCodeException("invalid: ${e.javaClass.simpleName}")
+        }
+    }
+
+    /**
+     * نفس التحقق/فك التشفير ديال verifyAndDecrypt، بصح كنرجعو
+     * الـplaintext JSON بحالو (String) بلا ما نفرضو schema ImportedConfig
+     * (SSH فقط). هادشي كيسمح للكولر (MainActivity) يشوف بنفسو واش هاد
+     * الكود كود SSH عادي (مفاتيح h/p/u/w...) ولا كود V2Ray raw JSON
+     * (مفتاح "v2j") قبل ما يقرر أي parser يستعمل.
+     */
+    fun verifyAndDecryptRaw(rawCode: String): String {
         try {
             val code = rawCode.trim()
             if (!code.startsWith(PREFIX)) {
@@ -84,7 +104,7 @@ internal object ImportCrypto {
             // 2) فك التشفير AES-256-GCM (الـGCM tag كيتحقق من التكامل زيادة على التوقيع)
             val plaintext = decryptAesGcm(ciphertext, iv)
 
-            return ImportedConfig.fromJson(String(plaintext, Charsets.UTF_8))
+            return String(plaintext, Charsets.UTF_8)
         } catch (e: InvalidImportCodeException) {
             throw e
         } catch (e: Throwable) {
