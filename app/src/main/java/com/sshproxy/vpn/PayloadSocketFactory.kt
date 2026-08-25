@@ -58,6 +58,17 @@ class PayloadSocketFactory(
             socket.keepAlive = true
             socket.tcpNoDelay = true
             socket.setPerformancePreferences(0, 2, 1) // prioritize low latency over bandwidth/connect-time
+            // كبرنا الـTCP send/receive buffers (256KB) من القيمة الافتراضية
+            // ديال الأندرويد (غالبا 64KB أو أقل). هاد السوكيت هو الوحيد لي
+            // كيحمل كل حركة الـSSH (كل الـchannels multiplexed فوقو)، وحجم
+            // البفر هو لي كيحدد قداش من بيانات يمكن تكون "فالطريق" قبل ما
+            // تنتظر تأكيد - على شبكة فيها latency حقيقية (موبايل، سيرفر
+            // بعيد)، بفر صغير كيولي هو السقف الحقيقي ديال السرعة حتى لو
+            // كانت البندويث الفعلية أكبر بزاف. هاد التعديل ماكيغيّرش
+            // البروتوكول ولا الإعدادات لي كيدخلها المستخدم - غير حجم
+            // الذاكرة المحجوزة للسوكيت.
+            socket.receiveBufferSize = 256 * 1024
+            socket.sendBufferSize = 256 * 1024
         } catch (_: Throwable) { }
         onLog("TCP Connecting...")
         try {

@@ -10,6 +10,13 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.Executors
 
+// 64KB بدل 8KB: تقليل عدد قراءات/كتابات النظام (syscalls) لكل ميغابايت
+// منقول - كل read()/write() كيكلف context switch، فبكبر البفر كنقصو
+// العدد ديالهم بزاف من غير ما نبدلو أي منطق. هادشي كيربح خصوصا فـ
+// التحميل/الرفع الكبير فين البوتلنيك هو عدد الـsyscalls ماشي البندويث
+// نفسها.
+private const val PIPE_BUFFER_SIZE = 64 * 1024
+
 /**
  * SOCKS5 server صغير وخفيف كيخدم فوق JSch Session.
  * JSch مافيهاش دعم native ديال "-D" (dynamic port forwarding بحال ssh command)،
@@ -149,12 +156,19 @@ class MiniSocks5Server(
     }
 
     private fun pipe(from: InputStream, to: OutputStream) {
-        val buffer = ByteArray(8192)
+        val buffer = ByteArray(PIPE_BUFFER_SIZE)
         try {
             while (true) {
                 val n = from.read(buffer)
                 if (n == -1) break
                 to.write(buffer, 0, n)
+                // flush() بعد كل قراءة باقية ضرورية هنا: الـSOCKS client
+                // socket خام (بلا buffering) فـflush() عليه no-op وما
+                // كيكلفش والو، أما الـchannel.outputStream ديال JSch
+                // فكيبفر داخليا - flush() هو لي كيدفعها تتبعث كـSSH
+                // packet مباشرة بدل ما تبقى واقفة. حذفها كانت غادي تزيد
+                // latency (خصوصا فالتصفح العادي) باش نربحو throughput
+                // زهيد جدا - التبديل ماشي مستاهل.
                 to.flush()
             }
         } catch (_: Exception) {
