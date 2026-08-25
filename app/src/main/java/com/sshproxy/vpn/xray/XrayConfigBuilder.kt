@@ -54,13 +54,35 @@ object XrayConfigBuilder {
         return root.toString()
     }
 
+    /**
+     * Xray الحديثة (libv2ray) حيدات "allowInsecure" بالكامل من tlsSettings
+     * وبدلاتها بـ "verifyPeerCertByName" (vcn). كونفيغات قديمة (v2rayN,
+     * كونفيغات ملصوقة يدوياً) مازالت كتستعمل allowInsecure، فكنحولوها
+     * هنا تلقائياً باش ماتطيحش بخطأ "feature has been removed".
+     */
+    private fun migrateAllowInsecure(outbound: JSONObject) {
+        try {
+            val stream = outbound.optJSONObject("streamSettings") ?: return
+            for (key in listOf("tlsSettings", "realitySettings")) {
+                val tls = stream.optJSONObject(key) ?: continue
+                if (tls.has("allowInsecure")) {
+                    val insecure = tls.optBoolean("allowInsecure", false)
+                    tls.remove("allowInsecure")
+                    // allowInsecure=true يعني "ما تتحققش من الشهادة" =
+                    // verifyPeerCertByName=false
+                    tls.put("verifyPeerCertByName", !insecure)
+                }
+            }
+        } catch (_: Throwable) { }
+    }
+
     private fun buildOutbound(cfg: ParsedProxyConfig): JSONObject {
-        // Xray JSON خام (استيراد كامل) - كنستعملوه بحالو، غير كنضمنو الـtag.
-        // allowInsecure كيبقى كيفما تحدد فالكونفيغ الأصلي (بلا ما نحيدوه)
-        // باش يخدم أي سيرفر جا، حتى لو الشهادة ديالو self-signed/غير موثوقة.
+        // Xray JSON خام (استيراد كامل) - كنستعملوه بحالو، غير كنضمنو الـtag
+        // وكنحولو allowInsecure القديمة لـverifyPeerCertByName الجديدة.
         cfg.rawOutboundJson?.let {
             val ob = JSONObject(it)
             ob.put("tag", "proxy")
+            migrateAllowInsecure(ob)
             return ob
         }
 
@@ -189,7 +211,9 @@ object XrayConfigBuilder {
                 stream.put("tlsSettings", JSONObject().apply {
                     put("serverName", cfg.sni.ifBlank { cfg.address })
                     put("fingerprint", cfg.fingerprint.ifBlank { "chrome" })
-                    put("allowInsecure", true)
+                    // "allowInsecure" تحيدات من Xray الحديثة وتعوضات بـ
+                    // verifyPeerCertByName (vcn): false = بلا تحقق من الشهادة
+                    put("verifyPeerCertByName", false)
                     if (cfg.alpn.isNotBlank()) {
                         put("alpn", JSONArray(cfg.alpn.split(",").map { it.trim() }))
                     }
