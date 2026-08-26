@@ -2,14 +2,14 @@
 <!--
     Rounded box with a green stroke for the Import Code text field, matching
     the Falcon Tunnel "Add Server" look (cyan box) but in the app's own
-    green accent color (#1DB954).
+    primary blue accent color, matching the Navigation Drawer.
 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <solid android:color="#0D1F14" />
     <stroke
         android:width="2dp"
-        android:color="#1DB954" />
+        android:color="@color/accent_blue" />
     <corners android:radius="10dp" />
     <padding
         android:left="12dp"
