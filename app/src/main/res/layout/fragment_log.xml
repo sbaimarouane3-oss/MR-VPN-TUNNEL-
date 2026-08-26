@@ -3,21 +3,21 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/app_bg"
+    android:background="@color/screen_bg"
     android:padding="16dp">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
-        android:background="@drawable/shape_terminal"
+        android:background="@drawable/shape_terminal_blue"
         android:padding="16dp">
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="CONNECTION LOG"
-            android:textColor="@color/text_secondary"
+            android:textColor="@color/screen_blue"
             android:textSize="12sp"
             android:textStyle="bold"
             android:letterSpacing="0.08"
@@ -35,7 +35,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:fontFamily="monospace"
-                android:textColor="@color/terminal_text"
+                android:textColor="@color/screen_blue"
                 android:textSize="12sp"
                 android:lineSpacingExtra="4dp"
                 android:text="" />

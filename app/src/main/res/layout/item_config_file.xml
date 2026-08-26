@@ -11,7 +11,7 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:background="@drawable/shape_card_alt"
+        android:background="@drawable/shape_config_card_blue"
         android:padding="14dp"
         android:clickable="true"
         android:focusable="true">
@@ -62,7 +62,7 @@
             android:layout_width="40dp"
             android:layout_height="40dp"
             android:layout_marginStart="10dp"
-            android:background="@drawable/shape_config_action_blue"
+            android:background="@drawable/shape_config_action_screen_blue"
             android:clickable="true"
             android:focusable="true">
 
@@ -86,7 +86,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:background="@drawable/shape_card_alt"
+        android:background="@drawable/shape_config_card_blue"
         android:layout_marginTop="2dp"
         android:padding="14dp"
         android:visibility="gone">

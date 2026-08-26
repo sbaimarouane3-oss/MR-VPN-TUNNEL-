@@ -2,7 +2,7 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/app_bg"
+    android:background="@color/screen_bg"
     android:clipToPadding="false"
     android:padding="16dp">
 
@@ -15,7 +15,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="SAVED CONFIGS"
-            android:textColor="@color/text_secondary"
+            android:textColor="@color/screen_blue"
             android:textSize="12sp"
             android:textStyle="bold"
             android:letterSpacing="0.08"
@@ -26,7 +26,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="No saved configs yet. Use the + button in SSH SETTINGS to create one."
-            android:textColor="@color/text_muted"
+            android:textColor="@color/text_secondary"
             android:textSize="13sp"
             android:padding="8dp"
             android:visibility="gone" />

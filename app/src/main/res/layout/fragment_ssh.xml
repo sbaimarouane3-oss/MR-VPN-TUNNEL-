@@ -3,7 +3,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/app_bg"
+    android:background="@color/screen_bg"
     android:clipToPadding="false"
     android:fillViewport="true">
 
@@ -17,10 +17,10 @@
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:cardBackgroundColor="@color/surface_card"
+            app:cardBackgroundColor="@color/screen_surface"
             app:cardCornerRadius="20dp"
             app:cardElevation="0dp"
-            app:strokeColor="@color/surface_stroke"
+            app:strokeColor="@color/screen_stroke"
             app:strokeWidth="1dp">
 
             <LinearLayout
@@ -77,10 +77,10 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="14dp"
-            app:cardBackgroundColor="@color/surface_card"
+            app:cardBackgroundColor="@color/screen_surface"
             app:cardCornerRadius="18dp"
             app:cardElevation="0dp"
-            app:strokeColor="@color/surface_stroke"
+            app:strokeColor="@color/screen_stroke"
             app:strokeWidth="1dp">
 
             <LinearLayout
@@ -122,7 +122,7 @@
                     android:layout_height="1dp"
                     android:layout_marginTop="12dp"
                     android:layout_marginBottom="12dp"
-                    android:background="@color/surface_stroke" />
+                    android:background="@color/screen_stroke" />
 
                 <!-- Protocol - قابلة للضغط دابا: كتفتح مختار البروتوكول
                      (SSH أو VLESS/VMess/Trojan/Shadowsocks/Xray JSON). -->
@@ -173,7 +173,7 @@
                     android:layout_height="1dp"
                     android:layout_marginTop="12dp"
                     android:layout_marginBottom="12dp"
-                    android:background="@color/surface_stroke" />
+                    android:background="@color/screen_stroke" />
 
                 <!-- Port -->
                 <LinearLayout
@@ -208,7 +208,7 @@
                     android:layout_height="1dp"
                     android:layout_marginTop="12dp"
                     android:layout_marginBottom="12dp"
-                    android:background="@color/surface_stroke" />
+                    android:background="@color/screen_stroke" />
 
                 <!-- Status -->
                 <LinearLayout
@@ -247,7 +247,7 @@
                     android:layout_height="1dp"
                     android:layout_marginTop="12dp"
                     android:layout_marginBottom="12dp"
-                    android:background="@color/surface_stroke"
+                    android:background="@color/screen_stroke"
                     android:visibility="gone" />
 
                 <LinearLayout
@@ -289,10 +289,10 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="14dp"
-            app:cardBackgroundColor="@color/surface_card"
+            app:cardBackgroundColor="@color/screen_surface"
             app:cardCornerRadius="18dp"
             app:cardElevation="0dp"
-            app:strokeColor="@color/surface_stroke"
+            app:strokeColor="@color/screen_stroke"
             app:strokeWidth="1dp">
 
             <!-- الحقول اليدوية: كتختفي كاملة إلا كان فيه كونفيغ مستورد نشط -->
@@ -683,7 +683,7 @@
             android:layout_width="match_parent"
             android:layout_height="52dp"
             android:layout_marginTop="16dp"
-            android:backgroundTint="@color/surface_card_alt"
+            android:backgroundTint="@color/screen_surface_alt"
             android:text="Add"
             android:textColor="@color/text_primary"
             android:drawableStart="@drawable/ic_add"
@@ -691,7 +691,7 @@
             android:drawablePadding="8dp"
             android:gravity="center"
             app:cornerRadius="16dp"
-            app:strokeColor="@color/surface_stroke"
+            app:strokeColor="@color/screen_stroke"
             app:strokeWidth="1dp"
             android:visibility="gone" />
 
@@ -700,11 +700,11 @@
             android:layout_width="match_parent"
             android:layout_height="52dp"
             android:layout_marginTop="14dp"
-            android:backgroundTint="@color/surface_card_alt"
+            android:backgroundTint="@color/screen_surface_alt"
             android:text="SHARE LOG"
             android:textColor="@color/text_primary"
             app:cornerRadius="16dp"
-            app:strokeColor="@color/surface_stroke"
+            app:strokeColor="@color/screen_stroke"
             app:strokeWidth="1dp"
             android:visibility="gone" />
 
@@ -748,7 +748,7 @@
             android:layout_width="match_parent"
             android:layout_height="52dp"
             android:layout_marginTop="16dp"
-            android:backgroundTint="@color/accent_blue"
+            android:backgroundTint="@color/screen_blue"
             android:text="+ NEW CONFIG"
             android:textColor="#FFFFFF"
             app:cornerRadius="16dp" />
