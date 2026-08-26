@@ -1,31 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Main app palette aligned with the Navigation Drawer blue/neon style. -->
-    <color name="app_bg">#050A14</color>
+    <!-- خلفية عامة للتطبيق -->
+    <color name="app_bg">#0B0F14</color>
 
-    <!-- Dark blue glass surfaces, matching the drawer background. -->
-    <color name="surface_card">#0D1724</color>
-    <color name="surface_card_alt">#142235</color>
-    <color name="surface_stroke">#263A52</color>
+    <!-- Cards / أسطح مرفوعة شوية عن الخلفية -->
+    <color name="surface_card">#141B22</color>
+    <color name="surface_card_alt">#1A222B</color>
+    <color name="surface_stroke">#242E38</color>
 
-    <!-- Text -->
+    <!-- نصوص -->
     <color name="text_primary">#FFFFFF</color>
-    <color name="text_secondary">#AAB7C8</color>
-    <color name="text_muted">#66758A</color>
+    <color name="text_secondary">#98A2B3</color>
+    <color name="text_muted">#5C6672</color>
 
-    <!-- Primary UI accent: same blue family as the Navigation Drawer. -->
-    <color name="accent_green">#3AA8FF</color>
-    <color name="accent_green_dark">#12409E</color>
-    <color name="accent_blue">#3AA8FF</color>
-    <color name="accent_blue_dark">#12409E</color>
-
-    <!-- Connection states remain semantic: green = success, red = error, orange = connecting. -->
+    <!-- ألوان الحالة -->
+    <color name="accent_green">#1DB954</color>
+    <color name="accent_green_dark">#12833B</color>
+    <color name="accent_blue">#2F80ED</color>
+    <color name="accent_blue_dark">#1C5FC0</color>
     <color name="state_success">#1DB954</color>
     <color name="state_error">#FF5459</color>
     <color name="state_connecting">#FFA726</color>
-    <color name="state_idle">#31445C</color>
+    <color name="state_idle">#5C6672</color>
 
-    <!-- Terminal -->
-    <color name="terminal_bg">#07111D</color>
+    <!-- طرفية / لوگ -->
+    <color name="terminal_bg">#0E1318</color>
     <color name="terminal_text">#31E981</color>
+
+    <!-- Blue screen palette matching the Navigation Drawer -->
+    <color name="screen_blue">#3AA8FF</color>
+    <color name="screen_blue_dark">#1C5FC0</color>
+    <color name="screen_bg">#070B16</color>
+    <color name="screen_surface">#0E1726</color>
+    <color name="screen_surface_alt">#122036</color>
+    <color name="screen_stroke">#234B73</color>
+
 </resources>
+
