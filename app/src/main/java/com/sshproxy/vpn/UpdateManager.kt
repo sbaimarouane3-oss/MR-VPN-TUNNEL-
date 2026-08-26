@@ -72,13 +72,11 @@ object UpdateManager {
         val appContext = context.applicationContext
         scope.launch {
             try {
-                // نجربو أولاً عبر التنل (إلا كان socksPort معطى) - هادشي
-                // كيتفادى بلوكاج/بطء الشبكة الحقيقية ديال الأوبراتور
-                // (بحال Orange على بيانات الهاتف) حيت التطبيق مستثنى من
-                // الـVPN أصلاً. إلا فشلات (تنل بطيء/سيرفر ماشي جاهز بعد)،
-                // كنرجعو نجربو مباشرة عبر الشبكة الحقيقية كـfallback.
-                val viaTunnel = socksPort?.let { UpdateChecker.fetch(it) }
-                val info = viaTunnel ?: UpdateChecker.fetch()
+                // كيجرب كل المصادر (GitHub raw + مرآة jsDelivr) وكل طريق
+                // (تنل ومباشر) بالتوازي - أول نتيجة ناجحة كتربح، والسقف
+                // الكلي للانتظار هو تقريباً مدة محاولة وحدة (~10s) ماشي
+                // مجموع كل المحاولات (كان كيوصل لأكثر من 50 ثانية قبل).
+                val info = UpdateChecker.fetchBest(socksPort)
                 if (info == null) {
                     onLog?.invoke("Update Check: Failed (unreachable via tunnel and direct network).")
                     return@launch
