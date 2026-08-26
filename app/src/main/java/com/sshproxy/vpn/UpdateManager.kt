@@ -44,6 +44,12 @@ object UpdateManager {
     private const val KEY_MESSAGE = "message"
     private const val KEY_DOWNLOAD_URL = "download_url"
     private const val KEY_FORCE_UPDATE = "force_update"
+    // النسخة (BuildConfig.VERSION_CODE) اللي كانت مثبتة ملي تصاوب هاد
+    // الفحص وتسجل هاد الملف. إلا اختلفت عن النسخة الحالية المثبتة دابا
+    // (يعني التطبيق تبدل بتحديث عادي بلا Uninstall)، الملف كيعتبر قديم
+    // (stale) ماشي موثوق بيه - حيت أي قيمة latest_version محفوظة فيه
+    // تصاوبات مع نسخة قديمة، وممكن ماتعكسش آخر حالة ديال update.json.
+    private const val KEY_CHECKED_WITH_VERSION_CODE = "checked_with_version_code"
 
     // Runs at most once per process lifetime. SshVpnService may reach
     // STATE_READY many times in one run (reconnects) - we only want the
@@ -110,6 +116,7 @@ object UpdateManager {
                 .put(KEY_MESSAGE, info.message)
                 .put(KEY_DOWNLOAD_URL, info.downloadUrl)
                 .put(KEY_FORCE_UPDATE, info.forceUpdate)
+                .put(KEY_CHECKED_WITH_VERSION_CODE, BuildConfig.VERSION_CODE)
             File(context.filesDir, FILE_NAME).writeText(json.toString())
         } catch (_: Throwable) {
             // Persistence must never crash the caller.
@@ -138,9 +145,22 @@ object UpdateManager {
     @Synchronized
     fun getPendingUpdate(context: Context): UpdateInfo? {
         return try {
-            val file = File(context.applicationContext.filesDir, FILE_NAME)
+            val appContext = context.applicationContext
+            val file = File(appContext.filesDir, FILE_NAME)
             if (!file.exists()) return null
             val json = JSONObject(file.readText())
+
+            // إلا كان الملف تسجل من نسخة تطبيق مختلفة (قديمة) عن النسخة
+            // المثبتة دابا - يعني التطبيق تبدل بتحديث عادي من ساعتها -
+            // نعتبروه قديم ومانثقوش فيه، ونمسحوه. هادشي كيجبر فحص جديد
+            // يتصاوب (عبر checkOnceAsync) بدل ما نبقاو معلقين على قيمة
+            // كتصاوب مع بناء قديم.
+            val checkedWithVersion = json.optInt(KEY_CHECKED_WITH_VERSION_CODE, -1)
+            if (checkedWithVersion != BuildConfig.VERSION_CODE) {
+                file.delete()
+                return null
+            }
+
             val latest = json.optInt(KEY_LATEST_VERSION_CODE, -1)
             if (latest <= 0) return null
             if (BuildConfig.VERSION_CODE >= latest) return null
