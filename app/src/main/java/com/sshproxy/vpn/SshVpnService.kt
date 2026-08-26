@@ -1651,7 +1651,7 @@ class SshVpnService : VpnService() {
             // most users have no usable internet before the VPN comes up.
             // Fully async, fully independent of the VPN itself; see
             // UpdateManager for the "never affects the tunnel" guarantees.
-            UpdateManager.checkOnceAsync(applicationContext, socksPort)
+            UpdateManager.checkOnceAsync(applicationContext, socksPort) { msg -> log(msg) }
             startProxyShareIfEnabled()
             startSpeedMonitor()
         } else {

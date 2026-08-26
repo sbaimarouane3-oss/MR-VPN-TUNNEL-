@@ -60,9 +60,11 @@ object UpdateManager {
      * process.
      *
      * [onLog], if given, receives a single neutral line once the check has
-     * actually run and completed (either "found a new version" or "already
-     * up to date") - never on network/parse failure, which stays silent by
-     * design.
+     * actually run and completed - "found a new version", "already up to
+     * date", OR (this used to stay silent, but that made real network
+     * failures indistinguishable from "never ran" - now it logs a
+     * diagnostic line here too, since this is app functionality, not a
+     * security-sensitive detail) "check failed / server unreachable".
      */
     fun checkOnceAsync(context: Context, socksPort: Int? = null, onLog: ((String) -> Unit)? = null) {
         if (checkedThisProcess) return
@@ -75,9 +77,12 @@ object UpdateManager {
                 // (بحال Orange على بيانات الهاتف) حيت التطبيق مستثنى من
                 // الـVPN أصلاً. إلا فشلات (تنل بطيء/سيرفر ماشي جاهز بعد)،
                 // كنرجعو نجربو مباشرة عبر الشبكة الحقيقية كـfallback.
-                val info = (socksPort?.let { UpdateChecker.fetch(it) } ?: UpdateChecker.fetch())
-                    ?: UpdateChecker.fetch()
-                    ?: return@launch
+                val viaTunnel = socksPort?.let { UpdateChecker.fetch(it) }
+                val info = viaTunnel ?: UpdateChecker.fetch()
+                if (info == null) {
+                    onLog?.invoke("Update Check: Failed (unreachable via tunnel and direct network).")
+                    return@launch
+                }
                 if (info.latestVersionCode > BuildConfig.VERSION_CODE) {
                     save(appContext, info)
                     onLog?.invoke("Update Check: New Version Available.")
