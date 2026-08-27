@@ -11,7 +11,7 @@
     <!-- نصوص -->
     <color name="text_primary">#FFFFFF</color>
     <color name="text_secondary">#98A2B3</color>
-    <color name="text_muted">#5C6672</color>
+    <color name="text_muted">#3AA8FF</color>
 
     <!-- ألوان الحالة -->
     <color name="accent_green">#1DB954</color>
