@@ -131,7 +131,7 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
                     actionBg.setBackgroundResource(R.drawable.shape_config_action_green)
                     actionIcon.setImageResource(R.drawable.ic_stop_square)
                 } else {
-                    // 🔴 أحمر = توقف أثناء بدء/محاولة الاتصال (الضغط عليه
+                    // 🟠 أحمر = توقف أثناء بدء/محاولة الاتصال (الضغط عليه
                     // كيلغي المحاولة، نفس disconnect() ديال الاتصال العادي).
                     actionBg.setBackgroundResource(R.drawable.shape_config_action_red)
                     actionIcon.setImageResource(R.drawable.ic_stop_square)
