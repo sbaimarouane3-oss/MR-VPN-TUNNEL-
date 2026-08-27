@@ -1,13 +1,13 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <style name="Theme.SshProxyPayload" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/accent_blue</item>
-        <item name="colorPrimaryDark">@color/app_bg</item>
-        <item name="colorAccent">@color/accent_blue</item>
-        <item name="colorSurface">@color/surface_card</item>
+        <item name="colorPrimary">#1DB954</item>
+        <item name="colorPrimaryDark">#0B0F14</item>
+        <item name="colorAccent">#1DB954</item>
+        <item name="colorSurface">#141B22</item>
         <item name="colorOnSurface">#FFFFFF</item>
-        <item name="android:windowBackground">@color/app_bg</item>
-        <item name="android:statusBarColor">@color/app_bg</item>
-        <item name="android:navigationBarColor">@color/app_bg</item>
+        <item name="android:windowBackground">#0B0F14</item>
+        <item name="android:statusBarColor">#0B0F14</item>
+        <item name="android:navigationBarColor">#0B0F14</item>
         <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>
     </style>
 
@@ -17,6 +17,9 @@
     </style>
 
     <!-- حقول الإدخال الحديثة (Outlined) بلون أخضر عند التركيز -->
+    <!-- FIX (توحيد بصري مع الشاشات الزرقاء): boxBackgroundColor دابا
+         screen_surface_alt بدل surface_card_alt القديم، باش الحقول
+         (SSH Host:Port / Username / Password...) تطابق باقي الشاشة. -->
     <style name="ModernTextInputLayout" parent="Widget.MaterialComponents.TextInputLayout.OutlinedBox">
         <item name="boxStrokeColor">@color/accent_green</item>
         <item name="boxStrokeWidth">1dp</item>
@@ -26,6 +29,6 @@
         <item name="boxCornerRadiusTopEnd">14dp</item>
         <item name="boxCornerRadiusBottomStart">14dp</item>
         <item name="boxCornerRadiusBottomEnd">14dp</item>
-        <item name="boxBackgroundColor">@color/surface_card_alt</item>
+        <item name="boxBackgroundColor">@color/screen_surface_alt</item>
     </style>
 </resources>
