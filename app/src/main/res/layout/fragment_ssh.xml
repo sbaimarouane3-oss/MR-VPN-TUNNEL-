@@ -485,7 +485,7 @@
                     <FrameLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:background="@drawable/shape_card_alt">
+                        android:background="@drawable/shape_config_card_blue">
 
                         <ScrollView
                             android:layout_width="match_parent"
@@ -561,7 +561,7 @@
                     <FrameLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:background="@drawable/shape_card_alt">
+                        android:background="@drawable/shape_config_card_blue">
 
                         <ScrollView
                             android:layout_width="match_parent"
@@ -714,7 +714,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:background="@drawable/shape_card_alt"
+            android:background="@drawable/shape_config_card_blue"
             android:padding="16dp"
             android:layout_marginTop="16dp"
             android:visibility="gone">
