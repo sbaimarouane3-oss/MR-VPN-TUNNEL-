@@ -8,11 +8,12 @@
     tools:openDrawer="start">
 
     <!-- المحتوى الرئيسي (Top bar + Tabs + ViewPager) -->
+    <!-- FIX (توحيد بصري مع الشاشات الزرقاء): screen_bg بدل app_bg القديم. -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
-        android:background="@color/app_bg">
+        android:background="@color/screen_bg">
 
         <!-- شريط علوي: زر القائمة (☰) + اسم التطبيق -->
         <LinearLayout
@@ -20,7 +21,7 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:background="@color/app_bg"
+            android:background="@color/screen_bg"
             android:paddingStart="8dp"
             android:paddingEnd="16dp"
             android:paddingTop="6dp"
@@ -49,6 +50,8 @@
         </LinearLayout>
 
         <!-- تبويبات بستايل Segmented Control -->
+        <!-- FIX (توحيد بصري): tabIndicatorColor دابا screen_blue بدل
+             accent_green، باش خط التبويب النشط يطابق باقي الشاشات الزرقاء. -->
         <com.google.android.material.tabs.TabLayout
             android:id="@+id/tabLayout"
             android:layout_width="match_parent"
@@ -60,7 +63,7 @@
             android:elevation="0dp"
             app:tabMode="fixed"
             app:tabGravity="fill"
-            app:tabIndicatorColor="@color/accent_green"
+            app:tabIndicatorColor="@color/screen_blue"
             app:tabIndicatorHeight="3dp"
             app:tabIndicatorFullWidth="false"
             app:tabRippleColor="@android:color/transparent"
@@ -75,7 +78,7 @@
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:background="@color/app_bg" />
+            android:background="@color/screen_bg" />
 
     </LinearLayout>
 
