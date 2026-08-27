@@ -52,11 +52,11 @@
             android:layout_height="50dp"
             android:layout_weight="1"
             android:layout_marginEnd="8dp"
-            android:backgroundTint="@color/surface_card_alt"
+            android:backgroundTint="@color/screen_surface_alt"
             android:text="CANCEL"
             android:textColor="@color/text_secondary"
             app:cornerRadius="14dp"
-            app:strokeColor="@color/surface_stroke"
+            app:strokeColor="@color/screen_stroke"
             app:strokeWidth="1dp" />
 
         <com.google.android.material.button.MaterialButton

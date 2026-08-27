@@ -75,7 +75,7 @@
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:layout_marginTop="4dp"
-        android:background="@color/surface_stroke" />
+        android:background="@color/screen_stroke" />
 
     <TextView
         android:id="@+id/btnProtocolCancel"
