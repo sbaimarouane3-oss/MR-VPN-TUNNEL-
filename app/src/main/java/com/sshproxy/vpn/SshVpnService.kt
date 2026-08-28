@@ -538,6 +538,8 @@ class SshVpnService : VpnService() {
         // المؤقت ديال 4.5s بانتظام.
         s.setConfig("kex", "diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha256," +
             "diffie-hellman-group14-sha256,ecdh-sha2-nistp256,curve25519-sha256")
+        s.setConfig("server_host_key", "ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384," +
+            "ecdsa-sha2-nistp521,rsa-sha2-512,rsa-sha2-256,ssh-rsa")
         applyKeepAlive(s)
 
         s.setSocketFactory(PayloadSocketFactory(proxyHost, proxyPort, payload, host, usePayload, useSsl, sni) { msg ->
@@ -1085,6 +1087,8 @@ class SshVpnService : VpnService() {
                     s.setConfig("StrictHostKeyChecking", "no")
                     s.setConfig("kex", "diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha256," +
                         "diffie-hellman-group14-sha256,ecdh-sha2-nistp256,curve25519-sha256")
+                    s.setConfig("server_host_key", "ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384," +
+                        "ecdsa-sha2-nistp521,rsa-sha2-512,rsa-sha2-256,ssh-rsa")
                     applyKeepAlive(s)
                     s.setSocketFactory(PayloadSocketFactory(lastProxyHost, lastProxyPort, lastPayload, lastHost, lastUsePayload, lastUseSsl, lastSni) { msg ->
                         log(msg)
