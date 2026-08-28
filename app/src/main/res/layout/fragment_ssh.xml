@@ -362,7 +362,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:textColor="@color/text_primary"
-                            android:inputType="textPassword" />
+                            android:inputType="text" />
                     </com.google.android.material.textfield.TextInputLayout>
                 </LinearLayout>
 
@@ -658,7 +658,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:textColor="@color/text_primary"
-                            android:inputType="textPassword" />
+                            android:inputType="text" />
                     </com.google.android.material.textfield.TextInputLayout>
 
                     <CheckBox
