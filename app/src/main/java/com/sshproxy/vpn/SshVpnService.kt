@@ -563,9 +563,13 @@ class SshVpnService : VpnService() {
         // host key من نوع ed25519، واللائحة الافتراضية ديال JSch ماكانتش
         // فيها هاد النوع، وهادشي كان كيسبب JSchAlgoNegoFailException
         // (algorithmName="server_host_key").
+        // ssh-dss مزيدة فالأخير: هاد السيرفر بالضبط عندو غير DSA
+        // (شفناها فـ serverProposal="ssh-dss" فرسالة الخطأ) - خوارزمية
+        // قديمة حيدوها أغلب المكتبات بشكل افتراضي، ولكن هي لي كيدعم
+        // هاد السيرفر بالضبط.
         s.setConfig("server_host_key",
             "ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521," +
-            "rsa-sha2-512,rsa-sha2-256,ssh-rsa")
+            "rsa-sha2-512,rsa-sha2-256,ssh-rsa,ssh-dss")
         applyKeepAlive(s)
 
         s.setSocketFactory(PayloadSocketFactory(proxyHost, proxyPort, payload, host, usePayload, useSsl, sni) { msg ->
@@ -1117,7 +1121,7 @@ class SshVpnService : VpnService() {
                         "diffie-hellman-group14-sha256,ecdh-sha2-nistp256,curve25519-sha256")
                     s.setConfig("server_host_key",
                         "ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521," +
-                        "rsa-sha2-512,rsa-sha2-256,ssh-rsa")
+                        "rsa-sha2-512,rsa-sha2-256,ssh-rsa,ssh-dss")
                     applyKeepAlive(s)
                     s.setSocketFactory(PayloadSocketFactory(lastProxyHost, lastProxyPort, lastPayload, lastHost, lastUsePayload, lastUseSsl, lastSni) { msg ->
                         log(msg)
