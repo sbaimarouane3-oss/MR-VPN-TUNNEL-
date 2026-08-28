@@ -1,3 +1,4 @@
+
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
@@ -95,12 +96,14 @@ android {
         }
     }
 
-    // bcprov-jdk18on (Bouncy Castle) فيها ملف مكرر بنفس المسار جوج مرات
-    // فداخل الـjar ديالها، وهادشي كان كيوقف mergeReleaseJavaResource
-    // بـ DuplicateRelativeFileException - نخليو Gradle يشد وحدة غير.
+    // bcprov-jdk18on (Bouncy Castle) فيها ملفات مكررة بنفس المسار جوج
+    // مرات فداخل الـjar ديالها (تحت META-INF/versions/N/OSGI-INF/ لعدة
+    // قيم N)، وهادشي كان كيوقف mergeReleaseJavaResource بـ
+    // DuplicateRelativeFileException - نخليو Gradle يشد وحدة غير من
+    // أي نسخة (wildcard كتغطي كلشي، ماشي غير رقم وحد).
     packagingOptions {
         resources {
-            excludes += ['META-INF/versions/9/OSGI-INF/MANIFEST.MF']
+            excludes += ['META-INF/versions/**/OSGI-INF/**']
         }
     }
 
