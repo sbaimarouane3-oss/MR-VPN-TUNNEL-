@@ -95,6 +95,15 @@ android {
         }
     }
 
+    // bcprov-jdk18on (Bouncy Castle) فيها ملف مكرر بنفس المسار جوج مرات
+    // فداخل الـjar ديالها، وهادشي كان كيوقف mergeReleaseJavaResource
+    // بـ DuplicateRelativeFileException - نخليو Gradle يشد وحدة غير.
+    packagingOptions {
+        resources {
+            excludes += ['META-INF/versions/9/OSGI-INF/MANIFEST.MF']
+        }
+    }
+
     // كل APK كيتبنى بمعمارية وحدة غير (armeabi-v7a أو arm64-v8a) بدل ما
     // تكون الجوج فـ نفس الملف - هادشي كيقسم حجم native libs (Xray-core +
     // hev-socks5-tunnel) بالنصف تقريبًا لكل مستخدم.
