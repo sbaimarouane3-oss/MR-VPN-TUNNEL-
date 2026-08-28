@@ -21,6 +21,7 @@ import android.telephony.TelephonyManager
 import androidx.core.app.NotificationCompat
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.Session
+import com.jcraft.jsch.Logger as JschLibLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -37,6 +38,24 @@ import com.sshproxy.vpn.xray.XrayCoreManager
 class SshVpnService : VpnService() {
 
     companion object {
+        // Logger تشخيصي مؤقت: كيلقط غير السطور ديال JSch لي فيها أسماء
+        // الخوارزميات (host key / kex / signatures) - بلا host/IP/port -
+        // وكيوجههم لـ log() ديال الخدمة الجارية، باش نشوفو بالضبط شنو
+        // كيقترح السيرفر (server proposal) ملي تفشل المصافحة.
+        private var diagSink: ((String) -> Unit)? = null
+
+        private val diagJschLogger = object : JschLibLogger {
+            override fun isEnabled(level: Int) = true
+            override fun log(level: Int, message: String) {
+                val relevant = message.contains("host_key", ignoreCase = true) ||
+                    message.contains("CheckSignatures", ignoreCase = true) ||
+                    message.contains("CheckKexes", ignoreCase = true) ||
+                    message.contains("server proposal", ignoreCase = true) ||
+                    message.contains("KEX algorithms", ignoreCase = true)
+                if (relevant) diagSink?.invoke(message.take(300))
+            }
+        }
+
         const val ACTION_CONNECT = "com.sshproxy.vpn.CONNECT"
         const val ACTION_DISCONNECT = "com.sshproxy.vpn.DISCONNECT"
         const val ACTION_LOG = "com.sshproxy.vpn.LOG"
@@ -516,6 +535,8 @@ class SshVpnService : VpnService() {
         log("Connection Setup Started.")
 
         val jsch = JSch()
+        diagSink = { msg -> log("JSCH: $msg") }
+        JSch.setLogger(diagJschLogger)
         val sessionStart = SystemClock.elapsedRealtime()
         val s = jsch.getSession(user, host, port)
         log("SSH Session Created. (${SystemClock.elapsedRealtime() - sessionStart} ms)")
@@ -1086,6 +1107,8 @@ class SshVpnService : VpnService() {
                 try {
                     // 2) + 3) Resend the payload and open a new SSH session
                     val jsch = JSch()
+                    diagSink = { msg -> log("JSCH: $msg") }
+                    JSch.setLogger(diagJschLogger)
                     val s = jsch.getSession(lastUser, lastHost, lastPort)
                     attemptSession = s
                     s.setPassword(lastPass)
@@ -1365,7 +1388,7 @@ class SshVpnService : VpnService() {
     /** Real exception detail for log messages - message first, falls back to the cause's, bounded so one log line can't blow up. */
     private fun realDetail(e: Throwable): String {
         val text = e.message?.takeIf { it.isNotBlank() } ?: e.cause?.message ?: "no detail"
-        return text.take(160)
+        return text.take(400)
     }
 
     private fun classifyConnectError(e: Throwable): String {
