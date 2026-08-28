@@ -128,6 +128,11 @@ android {
 dependencies {
     // Fork JSch متوافق مع D8 والـ Android الحديث (يخدم بلا مشاكل ديال JSch الأصلي المهجور)
     implementation 'com.github.mwiede:jsch:0.2.17'
+    // Bouncy Castle: JSch (mwiede) محتاجها باش تقدر تستعمل ssh-ed25519/ssh-ed448
+    // و curve25519-sha256/curve448-sha512 - بلاها كيشيل هاد الخوارزميات
+    // بروحو من الاقتراح (حتى ملي تكون مزيدة فـ setConfig) حيت
+    // Android ماعندهاش الدعم ديالهم بشكل أصلي فـ JCA.
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.78.1'
 
     implementation 'androidx.core:core-ktx:1.13.1'
     implementation 'androidx.appcompat:appcompat:1.7.0'
