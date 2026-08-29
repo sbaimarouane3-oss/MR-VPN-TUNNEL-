@@ -934,7 +934,7 @@ class MainActivity : AppCompatActivity() {
      */
     private fun promptPasswordForIncomingFile(bytes: ByteArray, fallbackName: String) {
         val input = EditText(this).apply {
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            inputType = android.text.InputType.TYPE_CLASS_TEXT
             hint = "Password"
         }
         AlertDialog.Builder(this)
@@ -1062,7 +1062,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showNewConfigPasswordDialog(name: String) {
         val passInput = EditText(this).apply {
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            inputType = android.text.InputType.TYPE_CLASS_TEXT
             hint = "Password (required, min ${MlConfigFile.MIN_PASSWORD_LENGTH} characters)"
         }
         AlertDialog.Builder(this)

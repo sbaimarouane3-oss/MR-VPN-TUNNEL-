@@ -367,7 +367,7 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
     private fun promptPasswordAndConnect(entry: ConfigFileEntry, bytes: ByteArray) {
         val ctx = context ?: return
         val input = EditText(ctx).apply {
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            inputType = InputType.TYPE_CLASS_TEXT
             hint = "Password"
         }
         AlertDialog.Builder(ctx)
@@ -432,7 +432,7 @@ class ConfigFragment : Fragment(R.layout.fragment_config) {
     private fun promptPasswordForEdit(entry: ConfigFileEntry, bytes: ByteArray) {
         val ctx = context ?: return
         val input = EditText(ctx).apply {
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            inputType = InputType.TYPE_CLASS_TEXT
             hint = "Password"
         }
         AlertDialog.Builder(ctx)
