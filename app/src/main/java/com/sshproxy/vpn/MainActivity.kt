@@ -1554,9 +1554,10 @@ class MainActivity : AppCompatActivity() {
                 }
                 val host = hostPort.substringBeforeLast(":")
                 val port = hostPort.substringAfterLast(":").toIntOrNull() ?: 443
+                val useProxy = PROTOCOL_OPTIONS.find { it.label == protocol }?.useProxy ?: false
                 val proxyText = (fields["proxy"] as? String)?.trim().orEmpty()
-                val proxyHost = if (proxyText.contains(":")) proxyText.substringBeforeLast(":") else host
-                val proxyPort = if (proxyText.contains(":")) proxyText.substringAfterLast(":").toIntOrNull() ?: port else port
+                val proxyHost = if (useProxy && proxyText.contains(":")) proxyText.substringBeforeLast(":") else host
+                val proxyPort = if (useProxy && proxyText.contains(":")) proxyText.substringAfterLast(":").toIntOrNull() ?: port else port
                 val cfg = ImportedConfig(
                     host = host,
                     port = port,
