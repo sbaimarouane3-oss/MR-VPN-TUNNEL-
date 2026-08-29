@@ -15,7 +15,27 @@ import org.json.JSONObject
  */
 object XrayConfigBuilder {
 
-    fun build(cfg: ParsedProxyConfig, localSocksPort: Int): String {
+    /**
+     * إلا كان الـoutbound المستورد (rawOutboundJson) فيه TLS +
+     * allowInsecure=true، كنرجعو (address, port, sni) باش تندار عليهم
+     * TLS probe حقيقي (TlsCertPinner) قبل build() - النتيجة كتنعطى لـ
+     * build() كـpinnedCertSha256. كنرجعو null إلا ماكانش allowInsecure
+     * أصلا (التحقق العادي ديال Xray كافي، بلا احتياج لأي probe).
+     */
+    fun probeTarget(cfg: ParsedProxyConfig): Triple<String, Int, String>? {
+        val raw = cfg.rawOutboundJson ?: return null
+        return try {
+            val ob = JSONObject(raw)
+            val stream = ob.optJSONObject("streamSettings") ?: return null
+            val tls = stream.optJSONObject("tlsSettings") ?: return null
+            if (!tls.optBoolean("allowInsecure", false)) return null
+            val sni = tls.optString("serverName").ifBlank { cfg.address }
+            if (cfg.address.isBlank() || cfg.port <= 0) return null
+            Triple(cfg.address, cfg.port, sni)
+        } catch (_: Throwable) { null }
+    }
+
+    fun build(cfg: ParsedProxyConfig, localSocksPort: Int, pinnedCertSha256: String? = null): String {
         val root = JSONObject()
 
         root.put("log", JSONObject().apply {
@@ -44,7 +64,7 @@ object XrayConfigBuilder {
             }
         ))
 
-        val proxyOutbound = buildOutbound(cfg)
+        val proxyOutbound = buildOutbound(cfg, pinnedCertSha256)
         root.put("outbounds", JSONArray()
             .put(proxyOutbound)
             .put(JSONObject().apply { put("protocol", "freedom"); put("tag", "direct") })
@@ -56,24 +76,21 @@ object XrayConfigBuilder {
 
     /**
      * Xray-core الحديث (v26.2.6+) كيرفض نهائياً أي config فيه
-     * "allowInsecure" (خاصية محذوفة رسمياً من Xray). البديل المهاجَر
-     * عليه رسمياً هو "verifyPeerCertByName": كنتحققو من الشهادة
-     * بالاسم الحقيقي ديال السيرفر (serverName/SNI المكتوب فالكونفيغ
-     * نفسو) بدل عنوان الاتصال (cfg.address) - هادشي كيحل مشكلة
-     * mismatch الشهادة بلا ما نعطلو التحقق كاملاً.
+     * "allowInsecure" (خاصية محذوفة رسمياً من Xray). البديل الرسمي
+     * ديالها هو "pinnedPeerCertSha256": نثبتو (pin) الشهادة الحقيقية
+     * لي رجعها السيرفر (جايا من TlsCertPinner عبر probe حقيقي قبل
+     * الاتصال) - هادشي كيخدم بلا حاجة نعرفو مسبقا واش الشهادة كتطابق
+     * عنوان الاتصال (address) ولا الـSNI المزيف (domain fronting)،
+     * حيت التجربتين السابقتين بانو أن التخمين (verifyPeerCertByName)
+     * ممكن يكون غلط فأي جيهة بحسب طريقة السيرفر.
      *
-     * ملاحظة مهمة (domain fronting): ملي address != SNI (بحال
-     * address="crazygames.ro" و serverName="fast.iqiraq.shop")،
-     * الشهادة لي كيرجعها السيرفر خاصها تطابق الـSNI (فين كتوجه TLS
-     * الحقيقي)، ماشي عنوان الاتصال (اللي هو غير CDN/decoy). التحقق
-     * بـcfg.address فهاد الحالة كان غلط وكيخلي التحقق يفشل ديما.
-     *
-     * إلا كان الاسم المستعمل IP خام (بلا دومين)، ماكاينش اسم نتحققو
-     * بيه، وقتها كنكتفاو بحذف allowInsecure (تفادي crash ديال Xray)
-     * بلا verifyPeerCertByName - قد يفشل TLS إلا كانت الشهادة
-     * فعلاً غير متطابقة، لكن هادشي خارج عن تحكمنا فهاد الحالة.
+     * إلا فشل الـprobe (بلا شبكة، timeout...) وماوصلناش لـ hash، كنرجعو
+     * لـverifyPeerCertByName بـSNI المكتوب فالكونفيغ (احتمال أقرب من
+     * address فحالات domain fronting عبر CDN مشترك) كـfallback أخير -
+     * قد يفشل التحقق إلا كانت الشهادة الحقيقية كتطابق address بدل SNI،
+     * لكن هادشي أحسن من الاتصال يفشل بلا أي محاولة.
      */
-    private fun migrateAllowInsecure(outbound: JSONObject, cfg: ParsedProxyConfig) {
+    private fun migrateAllowInsecure(outbound: JSONObject, cfg: ParsedProxyConfig, pinnedCertSha256: String?) {
         try {
             val stream = outbound.optJSONObject("streamSettings") ?: return
             val tls = stream.optJSONObject("tlsSettings") ?: return
@@ -81,24 +98,27 @@ object XrayConfigBuilder {
 
             val wasInsecure = tls.optBoolean("allowInsecure", false)
             tls.remove("allowInsecure")
+            if (!wasInsecure) return
 
-            // نفضلو serverName المكتوب فنفس الـtlsSettings (هو لي كيتصاوب
-            // فعليا فالمصافحة/SNI) - بلا ما نرجعو لـcfg.sni أو cfg.address
-            // إلا كان فارغ.
+            if (!pinnedCertSha256.isNullOrBlank()) {
+                tls.put("pinnedPeerCertSha256", pinnedCertSha256)
+                return
+            }
+
             val verifyName = tls.optString("serverName").ifBlank { cfg.sni.ifBlank { cfg.address } }
             val isRawIp = verifyName.matches(Regex("^\\d{1,3}(\\.\\d{1,3}){3}$"))
-            if (wasInsecure && !isRawIp && verifyName.isNotBlank() && !tls.has("verifyPeerCertByName")) {
+            if (!isRawIp && verifyName.isNotBlank() && !tls.has("verifyPeerCertByName")) {
                 tls.put("verifyPeerCertByName", verifyName)
             }
         } catch (_: Throwable) { }
     }
 
-    private fun buildOutbound(cfg: ParsedProxyConfig): JSONObject {
+    private fun buildOutbound(cfg: ParsedProxyConfig, pinnedCertSha256: String?): JSONObject {
         // Xray JSON خام (استيراد كامل) - كنستعملوه بحالو، غير كنضمنو الـtag.
         cfg.rawOutboundJson?.let {
             val ob = JSONObject(it)
             ob.put("tag", "proxy")
-            migrateAllowInsecure(ob, cfg)
+            migrateAllowInsecure(ob, cfg, pinnedCertSha256)
             return ob
         }
 
