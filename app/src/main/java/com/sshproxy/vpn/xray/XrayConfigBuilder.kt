@@ -58,12 +58,18 @@ object XrayConfigBuilder {
      * Xray-core الحديث (v26.2.6+) كيرفض نهائياً أي config فيه
      * "allowInsecure" (خاصية محذوفة رسمياً من Xray). البديل المهاجَر
      * عليه رسمياً هو "verifyPeerCertByName": كنتحققو من الشهادة
-     * بالاسم الحقيقي ديال السيرفر (cfg.address) بدل السيرفر نيم
-     * المزيف (SNI) المستعمل فـdomain fronting - هادشي كيحل مشكلة
+     * بالاسم الحقيقي ديال السيرفر (serverName/SNI المكتوب فالكونفيغ
+     * نفسو) بدل عنوان الاتصال (cfg.address) - هادشي كيحل مشكلة
      * mismatch الشهادة بلا ما نعطلو التحقق كاملاً.
      *
-     * إلا كان العنوان IP خام (بلا دومين)، ماكاينش اسم نتحققو بيه،
-     * وقتها كنكتفاو بحذف allowInsecure (تفادي crash ديال Xray)
+     * ملاحظة مهمة (domain fronting): ملي address != SNI (بحال
+     * address="crazygames.ro" و serverName="fast.iqiraq.shop")،
+     * الشهادة لي كيرجعها السيرفر خاصها تطابق الـSNI (فين كتوجه TLS
+     * الحقيقي)، ماشي عنوان الاتصال (اللي هو غير CDN/decoy). التحقق
+     * بـcfg.address فهاد الحالة كان غلط وكيخلي التحقق يفشل ديما.
+     *
+     * إلا كان الاسم المستعمل IP خام (بلا دومين)، ماكاينش اسم نتحققو
+     * بيه، وقتها كنكتفاو بحذف allowInsecure (تفادي crash ديال Xray)
      * بلا verifyPeerCertByName - قد يفشل TLS إلا كانت الشهادة
      * فعلاً غير متطابقة، لكن هادشي خارج عن تحكمنا فهاد الحالة.
      */
@@ -76,9 +82,13 @@ object XrayConfigBuilder {
             val wasInsecure = tls.optBoolean("allowInsecure", false)
             tls.remove("allowInsecure")
 
-            val isRawIp = cfg.address.matches(Regex("^\\d{1,3}(\\.\\d{1,3}){3}$"))
-            if (wasInsecure && !isRawIp && !tls.has("verifyPeerCertByName")) {
-                tls.put("verifyPeerCertByName", cfg.address)
+            // نفضلو serverName المكتوب فنفس الـtlsSettings (هو لي كيتصاوب
+            // فعليا فالمصافحة/SNI) - بلا ما نرجعو لـcfg.sni أو cfg.address
+            // إلا كان فارغ.
+            val verifyName = tls.optString("serverName").ifBlank { cfg.sni.ifBlank { cfg.address } }
+            val isRawIp = verifyName.matches(Regex("^\\d{1,3}(\\.\\d{1,3}){3}$"))
+            if (wasInsecure && !isRawIp && verifyName.isNotBlank() && !tls.has("verifyPeerCertByName")) {
+                tls.put("verifyPeerCertByName", verifyName)
             }
         } catch (_: Throwable) { }
     }
