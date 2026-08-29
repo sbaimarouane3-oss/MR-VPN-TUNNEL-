@@ -34,6 +34,7 @@ import java.util.concurrent.atomic.AtomicLong
 import com.sshproxy.vpn.xray.ParsedProxyConfig
 import com.sshproxy.vpn.xray.XrayConfigBuilder
 import com.sshproxy.vpn.xray.XrayCoreManager
+import com.sshproxy.vpn.xray.TlsCertPinner
 
 class SshVpnService : VpnService() {
 
@@ -779,23 +780,30 @@ class SshVpnService : VpnService() {
 
         SecurityCheck.quickScan()?.let { log(it) }
 
-        log("Generating Xray Config...")
-        val xrayJson = try {
-            XrayConfigBuilder.build(cfg, socksPort)
-        } catch (e: Throwable) {
-            throw IllegalArgumentException("ERROR: ${e.javaClass.simpleName}: ${realDetail(e)}", e)
-        }
-
-        // فحص الشبكة قبل أي محاولة اتصال حقيقية - Xray Core (libv2ray عبر
-        // JNI/native) ما مصمّمش يتعامل بأمان مع "بلا شبكة خالص" (مثلا DNS
-        // resolution أو فتح socket بلا أي interface متاح) - هادشي وارد
-        // يسبب native crash (SIGSEGV/Go panic) كيقتل الـprocess مباشرة،
-        // بلا ما يتلقط بـtry/catch ديال Kotlin هنا فوق. بفحص الشبكة قبل ما
-        // نديرو XrayCoreManager.start()، كنولّيو "No Network" غلطة عادية
-        // كتنكتب فاللوگ وتعاود تحاول بـbackoff - بحال أي غلطة أخرى - بدل
-        // كراش صامت كيسد التطبيق كامل.
+        // فحص الشبكة قبل أي محاولة اتصال حقيقية (بما فيها TLS probe تحت) -
+        // Xray Core (libv2ray عبر JNI/native) ما مصمّمش يتعامل بأمان مع
+        // "بلا شبكة خالص" - هادشي وارد يسبب native crash (SIGSEGV/Go
+        // panic) كيقتل الـprocess مباشرة، بلا ما يتلقط بـtry/catch ديال
+        // Kotlin هنا فوق. بفحص الشبكة بكري، كنولّيو "No Network" غلطة
+        // عادية كتنكتب فاللوگ وتعاود تحاول بـbackoff - بدل كراش صامت.
         if (!hasUsableNetwork()) {
             throw java.io.IOException("No network connection available.")
+        }
+
+        // إلا كان الكونفيغ فيه allowInsecure=true (TLS مع domain fronting
+        // أو شهادة ذاتية)، كندارو TLS probe حقيقي قبل ما نبنيو كونفيغ
+        // Xray النهائي - كنجيبو الشهادة الحقيقية ونثبتوها (pin) بدل ما
+        // نخمنو اسم للتحقق (address ولا SNI - التخمين فشل فحالتين مختلفتين).
+        val pinnedCertSha256 = XrayConfigBuilder.probeTarget(cfg)?.let { (host, port, sni) ->
+            log("Verifying server certificate...")
+            TlsCertPinner.fetchLeafCertSha256Hex(host, port, sni)
+        }
+
+        log("Generating Xray Config...")
+        val xrayJson = try {
+            XrayConfigBuilder.build(cfg, socksPort, pinnedCertSha256)
+        } catch (e: Throwable) {
+            throw IllegalArgumentException("ERROR: ${e.javaClass.simpleName}: ${realDetail(e)}", e)
         }
 
         log("Connecting...")
@@ -1242,7 +1250,10 @@ class SshVpnService : VpnService() {
                 try {
                     val cfg = ParsedProxyConfig.fromJson(lastXrayParsedJson)
                     backendProtocolName = "${cfg.protocol.name} SOCKS5"
-                    val xrayJson = XrayConfigBuilder.build(cfg, socksPort)
+                    val pinnedCertSha256 = XrayConfigBuilder.probeTarget(cfg)?.let { (host, port, sni) ->
+                        TlsCertPinner.fetchLeafCertSha256Hex(host, port, sni)
+                    }
+                    val xrayJson = XrayConfigBuilder.build(cfg, socksPort, pinnedCertSha256)
                     val started = XrayCoreManager.start(
                         context = applicationContext,
                         configJson = xrayJson,
