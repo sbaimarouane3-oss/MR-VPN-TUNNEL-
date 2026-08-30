@@ -43,8 +43,14 @@ object UpdateChecker {
     private const val UPDATE_JSON_URL_JSDELIVR =
         "https://cdn.jsdelivr.net/gh/marouanegerman5-hue/update.json@main/update.json"
 
-    private const val TIMEOUT_MS = 8000
-    private const val OVERALL_TIMEOUT_MS = TIMEOUT_MS + 2000L
+    // كل محاولة وحدة (call) عندها هاد الـtimeout، وكل attempt (tunnel/direct
+    // × raw/jsdelivr) كتعاود لـMAX_RETRIES مرات إلا فشلت - باش نقاوموا
+    // فشل لحظي/عابر (بحال IP مشترك ديال السيرفر مزدحم لحظتها) بلا ما
+    // نعتبروه فشل نهائي من أول محاولة.
+    private const val TIMEOUT_MS = 5000
+    private const val MAX_RETRIES = 2
+    private const val RETRY_DELAY_MS = 400L
+    private const val OVERALL_TIMEOUT_MS = (TIMEOUT_MS * MAX_RETRIES) + (RETRY_DELAY_MS * (MAX_RETRIES - 1)) + 2000L
 
     private data class Attempt(val label: String, val url: String, val socksPort: Int?, val isRaw: Boolean)
 
@@ -61,6 +67,12 @@ object UpdateChecker {
      * وصلات قبلها بنتيجة (potentially قديمة). غير إلا خلص الوقت الكلي
      * بلا ما توصل أي نتيجة من raw، كنستعملو نتيجة jsDelivr إلا كانت
      * وصلات (أحسن من "unreachable" كليا).
+     *
+     * ملاحظة (raw+tunnel/jsdelivr+tunnel تحديداً): هاد الطلبات كتخرج من
+     * IP السيرفر SSH نفسو (exit IP) - مشترك بين بزاف المستخدمين، وممكن
+     * GitHub/jsDelivr يبطؤوه/يبلوكيوه مؤقتاً إلا زاد الحمل عليه (rate
+     * limiting). كل attempt (فيها MAX_RETRIES محاولات) هي احتياط ضد
+     * هاد النوع ديال الفشل العابر.
      */
     fun fetchBest(socksPort: Int? = null): UpdateInfo? {
         val attempts = mutableListOf<Attempt>()
@@ -73,7 +85,7 @@ object UpdateChecker {
         try {
             val completionService = ExecutorCompletionService<Pair<Boolean, UpdateInfo?>>(pool)
             attempts.forEach { attempt ->
-                completionService.submit(Callable { attempt.isRaw to fetchOne(attempt.url, attempt.socksPort) })
+                completionService.submit(Callable { attempt.isRaw to fetchWithRetry(attempt.url, attempt.socksPort) })
             }
 
             var jsDelivrFallback: UpdateInfo? = null
@@ -93,6 +105,17 @@ object UpdateChecker {
         } finally {
             pool.shutdownNow()
         }
+    }
+
+    /** كيعاود fetchOne حتى MAX_RETRIES مرات (بفاصل RETRY_DELAY_MS) قبل ما يعتبرها فشل نهائي. */
+    private fun fetchWithRetry(url: String, socksPort: Int?): UpdateInfo? {
+        repeat(MAX_RETRIES) { attemptIndex ->
+            fetchOne(url, socksPort)?.let { return it }
+            if (attemptIndex < MAX_RETRIES - 1) {
+                try { Thread.sleep(RETRY_DELAY_MS) } catch (_: InterruptedException) { return null }
+            }
+        }
+        return null
     }
 
     /** Backward-compatible single-attempt fetch (direct network only, or via a given tunnel). */
