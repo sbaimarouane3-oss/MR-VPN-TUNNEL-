@@ -145,6 +145,7 @@ class SshVpnService : VpnService() {
     @Volatile private var backendProtocolName: String = "SOCKS5" // for UnifiedProxySharingManager's log ("SSH SOCKS5", "VLESS SOCKS5", ...)
     private var speedMonitorJob: Job? = null
     private var xrayPingMonitorJob: Job? = null
+    private var updateWatchdogJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     // Random local SOCKS5 port chosen once per service run (instead of a
@@ -1680,6 +1681,41 @@ class SshVpnService : VpnService() {
 
     private class StaleSessionException : Exception()
 
+    // كل شحال (بالميلي ثانية) كنعاودو نفحصو التحديث وقت الاتصال شغال.
+    // 30 دقيقة توازن معقول: قريب بزاف باش المستخدمين ما يبقاوش متصلين
+    // بنسخة قديمة مدة طويلة بعد ما تبان نسخة جديدة، وبعيد بزاف باش
+    // ماتزيدش حمل شبكة/سيرفر بلا فائدة.
+    private const val UPDATE_RECHECK_INTERVAL_MS = 30 * 60 * 1000L
+
+    /**
+     * كيعاود يفحص وجود تحديث كل [UPDATE_RECHECK_INTERVAL_MS] وقت الاتصال
+     * باقي STATE_READY. checkOnceAsync (فـbroadcastStatus فوق) كيدير غير
+     * فحص وحد فحياة الـprocess - هادشي هو لي كان كيخلي تبديل
+     * latest_version من عند السيرفر بلا أي أثر على مستخدم متصل من قبل.
+     * ملي يلقى نسخة أجد، كيقطع الاتصال تلقائيا فوراً (بلا ما ينتظر
+     * المستخدم يرجع للتطبيق) - showUpdateDialogIfNeeded من جهتها
+     * (MainActivity) غادي تبين الـdialog ملي تفتح/ترجع للواجهة.
+     */
+    private fun startUpdateWatchdog(epoch: Long) {
+        updateWatchdogJob?.cancel()
+        updateWatchdogJob = scope.launch {
+            while (isSessionCurrent(epoch)) {
+                delay(UPDATE_RECHECK_INTERVAL_MS)
+                if (!isSessionCurrent(epoch)) break
+                val newer = try {
+                    UpdateManager.checkNow(applicationContext, socksPort)
+                } catch (_: Throwable) {
+                    null
+                }
+                if (newer != null && isSessionCurrent(epoch)) {
+                    log("Update Check: New Version Available - disconnecting.")
+                    stopVpn(STATE_DISCONNECTED)
+                    break
+                }
+            }
+        }
+    }
+
     private fun broadcastStatus(state: String, epoch: Long? = null) {
         // A stale connection attempt must never publish a state after Stop
         // or after a newer START. DISCONNECTED/FAILED are terminal states
@@ -1700,9 +1736,17 @@ class SshVpnService : VpnService() {
             // Fully async, fully independent of the VPN itself; see
             // UpdateManager for the "never affects the tunnel" guarantees.
             UpdateManager.checkOnceAsync(applicationContext, socksPort) { msg -> log(msg) }
+            // فحص دوري إضافي وقت مازال الاتصال شغال (الأول ديال
+            // checkOnceAsync كيخدم مرة وحدة فحياة الـprocess) - بلا
+            // هادشي، تبديل latest_version من عند السيرفر وقت مستخدم
+            // متصل من قبل ماكانش عندو أي أثر حتى يسكر التطبيق ويرجع
+            // يحلو أو يقطع الاتصال ويرجع يتصل.
+            startUpdateWatchdog(epoch ?: sessionEpoch.get())
             startProxyShareIfEnabled()
             startSpeedMonitor()
         } else {
+            updateWatchdogJob?.cancel()
+            updateWatchdogJob = null
             // Any state other than READY (RECONNECTING, WAITING_NETWORK,
             // FAILED, DISCONNECTED...) must stop the speed monitor - it was
             // previously left running across state changes, which kept

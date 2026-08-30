@@ -77,32 +77,54 @@ object UpdateManager {
         checkedThisProcess = true
         val appContext = context.applicationContext
         scope.launch {
-            try {
-                // كيجرب كل المصادر (GitHub raw + مرآة jsDelivr) وكل طريق
-                // (تنل ومباشر) بالتوازي - أول نتيجة ناجحة كتربح، والسقف
-                // الكلي للانتظار هو تقريباً مدة محاولة وحدة (~10s) ماشي
-                // مجموع كل المحاولات (كان كيوصل لأكثر من 50 ثانية قبل).
-                val info = UpdateChecker.fetchBest(socksPort)
-                if (info == null) {
-                    onLog?.invoke("Update Check: Failed (unreachable via tunnel and direct network).")
-                    return@launch
+            val info = checkNow(appContext, socksPort)
+            onLog?.invoke(
+                when {
+                    info == null && !lastCheckSucceeded -> "Update Check: Failed (unreachable via tunnel and direct network)."
+                    info != null -> "Update Check: New Version Available."
+                    else -> "Update Check: Up To Date."
                 }
-                if (info.latestVersionCode > BuildConfig.VERSION_CODE) {
-                    save(appContext, info)
-                    onLog?.invoke("Update Check: New Version Available.")
-                } else {
-                    // We're already on latest (or newer) as of this fresh
-                    // check - e.g. the user updated already, or reinstalled
-                    // an old build but latest_version was lowered/removed.
-                    // Clear any stale pending record so the dialog stops.
-                    clear(appContext)
-                    onLog?.invoke("Update Check: Up To Date.")
-                }
-            } catch (_: Throwable) {
-                // Belt-and-suspenders: UpdateChecker.fetch() already never
-                // throws, but nothing about this feature is allowed to ever
-                // surface an error or crash the app.
+            )
+        }
+    }
+
+    // آخر checkNow() واش نجح يتصل بالسيرفر خالص (بغض النظر واش لقى
+    // نسخة جديدة ولا لا) - كنستعملوها هنا غير باش نميزو رسالة اللوگ
+    // "Failed" عن "Up To Date" فـcheckOnceAsync (checkNow() كترجع null
+    // فحالتين مختلفتين: فشل الاتصال، أو الاتصال نجح ولكن ماكاينش تحديث).
+    @Volatile private var lastCheckSucceeded = false
+
+    /**
+     * الفحص الفعلي: كيدير fetch، كيسجل (save) إلا لقى نسخة أجد من
+     * BuildConfig.VERSION_CODE، أو كيمسح أي سجل قديم (clear) إلا كنا
+     * خلاص محدّثين. كيرجع الـUpdateInfo الجديد إلا لقى شي حاجة، أو null
+     * (فشل الاتصال أو محدّثين خلاص - lastCheckSucceeded كيميز بينهم).
+     *
+     * استعمالين: (1) checkOnceAsync - مرة وحدة فحياة الـprocess، أول
+     * STATE_READY. (2) فحص دوري من SshVpnService وقت مازال الاتصال
+     * شغال، باش نكتشفو تحديث تزاد من عند السيرفر بعد ما المستخدم
+     * خلاص متصل - بلا هادشي، تبديل latest_version وقت مستخدم متصل من
+     * قبل ما كانش عندو أي أثر حتى يسكر التطبيق ويرجع يحلو.
+     */
+    suspend fun checkNow(context: Context, socksPort: Int?): UpdateInfo? {
+        val appContext = context.applicationContext
+        return try {
+            val info = UpdateChecker.fetchBest(socksPort)
+            if (info == null) {
+                lastCheckSucceeded = false
+                return null
             }
+            lastCheckSucceeded = true
+            if (info.latestVersionCode > BuildConfig.VERSION_CODE) {
+                save(appContext, info)
+                info
+            } else {
+                clear(appContext)
+                null
+            }
+        } catch (_: Throwable) {
+            lastCheckSucceeded = false
+            null
         }
     }
 
