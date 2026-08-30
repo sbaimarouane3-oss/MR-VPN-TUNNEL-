@@ -1685,7 +1685,7 @@ class SshVpnService : VpnService() {
     // 30 دقيقة توازن معقول: قريب بزاف باش المستخدمين ما يبقاوش متصلين
     // بنسخة قديمة مدة طويلة بعد ما تبان نسخة جديدة، وبعيد بزاف باش
     // ماتزيدش حمل شبكة/سيرفر بلا فائدة.
-    private val UPDATE_RECHECK_INTERVAL_MS = 3 * 60 * 1000L
+    private val UPDATE_RECHECK_INTERVAL_MS = 30 * 60 * 1000L
 
     /**
      * كيعاود يفحص وجود تحديث كل [UPDATE_RECHECK_INTERVAL_MS] وقت الاتصال
@@ -1730,18 +1730,31 @@ class SshVpnService : VpnService() {
         StateStore.write(applicationContext, state, requestId)
         updateNotification(state)
         if (state == STATE_READY) {
+            val watchdogEpoch = epoch ?: sessionEpoch.get()
             // Fire the (at most once per process) update check only once we
             // have a real, working connection - never on cold start, since
             // most users have no usable internet before the VPN comes up.
             // Fully async, fully independent of the VPN itself; see
             // UpdateManager for the "never affects the tunnel" guarantees.
-            UpdateManager.checkOnceAsync(applicationContext, socksPort) { msg -> log(msg) }
+            //
+            // onNewerFound: كنقطعو الاتصال مباشرة من هنا، بلا ما نستناو
+            // المستخدم يرجع لواجهة التطبيق (onResume) أو الفحص الدوري
+            // (كل 30 دقيقة) - ثغرة كانت موجودة: مستخدم يخلي التطبيق فالخلفية
+            // (أو يمسح بيانات التطبيق بعد الاتصال مباشرة، قبل ما ينفذ أي
+            // إجراء) كان يقدر يبقى متصل بنسخة قديمة مدة طويلة رغم أن
+            // السيرفر خبر التطبيق أنه قديم من أول اتصال.
+            UpdateManager.checkOnceAsync(applicationContext, socksPort, onLog = { msg -> log(msg) }) {
+                if (isSessionCurrent(watchdogEpoch)) {
+                    log("Update Check: New Version Available - disconnecting.")
+                    stopVpn(STATE_DISCONNECTED)
+                }
+            }
             // فحص دوري إضافي وقت مازال الاتصال شغال (الأول ديال
             // checkOnceAsync كيخدم مرة وحدة فحياة الـprocess) - بلا
             // هادشي، تبديل latest_version من عند السيرفر وقت مستخدم
             // متصل من قبل ماكانش عندو أي أثر حتى يسكر التطبيق ويرجع
             // يحلو أو يقطع الاتصال ويرجع يتصل.
-            startUpdateWatchdog(epoch ?: sessionEpoch.get())
+            startUpdateWatchdog(watchdogEpoch)
             startProxyShareIfEnabled()
             startSpeedMonitor()
         } else {

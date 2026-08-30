@@ -71,8 +71,25 @@ object UpdateManager {
      * failures indistinguishable from "never ran" - now it logs a
      * diagnostic line here too, since this is app functionality, not a
      * security-sensitive detail) "check failed / server unreachable".
+     *
+     * [onNewerFound], if given, runs immediately when this very first check
+     * finds a newer version - SshVpnService passes a disconnect here so an
+     * outdated app gets kicked right away instead of staying connected
+     * until the user happens to foreground MainActivity (which shows the
+     * blocking dialog) or until the 30-minute periodic re-check elsewhere
+     * in SshVpnService fires. Without this, a user who simply keeps the app
+     * backgrounded (or clears app storage right after connecting, wiping
+     * the locally-saved pending-update record before it's ever acted on)
+     * could keep using an outdated build for a long stretch even though
+     * the server already told the app it's outdated on this very
+     * connection.
      */
-    fun checkOnceAsync(context: Context, socksPort: Int? = null, onLog: ((String) -> Unit)? = null) {
+    fun checkOnceAsync(
+        context: Context,
+        socksPort: Int? = null,
+        onLog: ((String) -> Unit)? = null,
+        onNewerFound: (() -> Unit)? = null
+    ) {
         if (checkedThisProcess) return
         checkedThisProcess = true
         val appContext = context.applicationContext
@@ -85,6 +102,7 @@ object UpdateManager {
                     else -> "Update Check: Up To Date."
                 }
             )
+            if (info != null) onNewerFound?.invoke()
         }
     }
 
