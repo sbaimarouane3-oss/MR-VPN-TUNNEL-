@@ -44,36 +44,39 @@ object UpdateChecker {
         "https://cdn.jsdelivr.net/gh/marouanegerman5-hue/update.json@main/update.json"
 
     private const val TIMEOUT_MS = 8000
-
-    // كل محاولة (URL × route) بمفردها كتاخد حتى TIMEOUT_MS، لكن كلهم
-    // كيتصاوبو بالتوازي (ماشي وحدة تلو الأخرى) - أول وحدة تنجح كتوقف
-    // الباقي، فالسقف الكلي هو تقريبا TIMEOUT_MS + هامش بسيط، ماشي
-    // مجموعهم (كان كيوصل لـ50+ ثانية قبل).
     private const val OVERALL_TIMEOUT_MS = TIMEOUT_MS + 2000L
 
-    private data class Attempt(val label: String, val url: String, val socksPort: Int?)
+    private data class Attempt(val label: String, val url: String, val socksPort: Int?, val isRaw: Boolean)
 
     /**
-     * كيجرب كل المصادر (raw.githubusercontent.com و jsDelivr) وكل طريق
-     * (عبر التنل إلا كان socksPort معطى، ومباشرة) بالتوازي، ويرجع أول
-     * نتيجة ناجحة. Returns null إلا فشلو الكل ولا فات الوقت الكلي.
+     * كل 4 محاولات (raw+tunnel، raw+direct، jsdelivr+tunnel، jsdelivr+direct)
+     * كيتصاوبو بالتوازي حقيقي، بلا ما نأخرو أي وحدة منهم - هادشي مهم
+     * لأن بعض الشبكات كتبلوكي raw.githubusercontent.com بالكامل (لاحظنا
+     * هادشي: Maroc Telecom)، فـjsDelivr خاصها الفرصة الكاملة من البداية
+     * باش توصل، ماشي غير بعد ما يفوت الوقت الكلي ديال raw.
+     *
+     * فنفس الوقت، raw هي المصدر الحقيقي بلا cache (المحتوى ديالها ديما
+     * آخر نسخة push-ات فعليا)، بينما jsDelivr CDN كتخبى المحتوى لساعات
+     * وحتى أيام - فملي توصل نتيجة من raw، كنرجعوها فورا حتى لو jsDelivr
+     * وصلات قبلها بنتيجة (potentially قديمة). غير إلا خلص الوقت الكلي
+     * بلا ما توصل أي نتيجة من raw، كنستعملو نتيجة jsDelivr إلا كانت
+     * وصلات (أحسن من "unreachable" كليا).
      */
     fun fetchBest(socksPort: Int? = null): UpdateInfo? {
         val attempts = mutableListOf<Attempt>()
-        if (socksPort != null) {
-            attempts += Attempt("raw+tunnel", UPDATE_JSON_URL_RAW, socksPort)
-            attempts += Attempt("jsdelivr+tunnel", UPDATE_JSON_URL_JSDELIVR, socksPort)
-        }
-        attempts += Attempt("raw+direct", UPDATE_JSON_URL_RAW, null)
-        attempts += Attempt("jsdelivr+direct", UPDATE_JSON_URL_JSDELIVR, null)
+        if (socksPort != null) attempts += Attempt("raw+tunnel", UPDATE_JSON_URL_RAW, socksPort, true)
+        attempts += Attempt("raw+direct", UPDATE_JSON_URL_RAW, null, true)
+        if (socksPort != null) attempts += Attempt("jsdelivr+tunnel", UPDATE_JSON_URL_JSDELIVR, socksPort, false)
+        attempts += Attempt("jsdelivr+direct", UPDATE_JSON_URL_JSDELIVR, null, false)
 
         val pool = Executors.newFixedThreadPool(attempts.size)
         try {
-            val completionService = ExecutorCompletionService<UpdateInfo?>(pool)
+            val completionService = ExecutorCompletionService<Pair<Boolean, UpdateInfo?>>(pool)
             attempts.forEach { attempt ->
-                completionService.submit(Callable { fetchOne(attempt.url, attempt.socksPort) })
+                completionService.submit(Callable { attempt.isRaw to fetchOne(attempt.url, attempt.socksPort) })
             }
 
+            var jsDelivrFallback: UpdateInfo? = null
             val deadline = System.currentTimeMillis() + OVERALL_TIMEOUT_MS
             var received = 0
             while (received < attempts.size) {
@@ -81,10 +84,12 @@ object UpdateChecker {
                 if (remaining <= 0) break
                 val future = completionService.poll(remaining, TimeUnit.MILLISECONDS) ?: break
                 received++
-                val result = try { future.get() } catch (_: Throwable) { null }
-                if (result != null) return result
+                val (isRaw, result) = try { future.get() } catch (_: Throwable) { false to null }
+                if (result == null) continue
+                if (isRaw) return result
+                if (jsDelivrFallback == null) jsDelivrFallback = result
             }
-            return null
+            return jsDelivrFallback
         } finally {
             pool.shutdownNow()
         }
@@ -109,6 +114,8 @@ object UpdateChecker {
             conn.connectTimeout = TIMEOUT_MS
             conn.readTimeout = TIMEOUT_MS
             conn.requestMethod = "GET"
+            conn.useCaches = false
+            conn.setRequestProperty("Cache-Control", "no-cache")
             if (conn.responseCode !in 200..299) return null
 
             val body = conn.inputStream.bufferedReader().use { it.readText() }
