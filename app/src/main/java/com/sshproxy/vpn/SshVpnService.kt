@@ -301,12 +301,6 @@ class SshVpnService : VpnService() {
         firstReconnectFailureAt = 0L
         socksPort = (20000..59000).random()
 
-        // كل CONNECT حقيقي جديد (بما فيه إعادة الاتصال اليدوية من
-        // STATE_WAITING_USER_ACTION، اللي ماكتقتلش الـprocess) خاصو
-        // يعطي فرصة لفحص تحديث فوري واحد على أول STATE_READY ديالو -
-        // شوف توثيق UpdateManager.resetForNewSession().
-        UpdateManager.resetForNewSession()
-
         if (session != null || tunFd != null || socksServer != null) {
             cleanupResources()
         }
@@ -1709,7 +1703,9 @@ class SshVpnService : VpnService() {
                 delay(UPDATE_RECHECK_INTERVAL_MS)
                 if (!isSessionCurrent(epoch)) break
                 val newer = try {
-                    UpdateManager.checkNow(applicationContext, socksPort)
+                    UpdateManager.checkNow(applicationContext, socksPort) { label, success ->
+                        log("Update Check [$label]: ${if (success) "OK" else "failed"}.")
+                    }
                 } catch (_: Throwable) {
                     null
                 }
@@ -1749,12 +1745,18 @@ class SshVpnService : VpnService() {
             // (أو يمسح بيانات التطبيق بعد الاتصال مباشرة، قبل ما ينفذ أي
             // إجراء) كان يقدر يبقى متصل بنسخة قديمة مدة طويلة رغم أن
             // السيرفر خبر التطبيق أنه قديم من أول اتصال.
-            UpdateManager.checkOnceAsync(applicationContext, socksPort, onLog = { msg -> log(msg) }) {
-                if (isSessionCurrent(watchdogEpoch)) {
-                    log("Update Check: New Version Available - disconnecting.")
-                    stopVpn(STATE_DISCONNECTED)
-                }
-            }
+            UpdateManager.checkOnceAsync(
+                applicationContext,
+                socksPort,
+                onLog = { msg -> log(msg) },
+                onNewerFound = {
+                    if (isSessionCurrent(watchdogEpoch)) {
+                        log("Update Check: New Version Available - disconnecting.")
+                        stopVpn(STATE_DISCONNECTED)
+                    }
+                },
+                onAttempt = { label, success -> log("Update Check [$label]: ${if (success) "OK" else "failed"}.") }
+            )
             // فحص دوري إضافي وقت مازال الاتصال شغال (الأول ديال
             // checkOnceAsync كيخدم مرة وحدة فحياة الـprocess) - بلا
             // هادشي، تبديل latest_version من عند السيرفر وقت مستخدم
