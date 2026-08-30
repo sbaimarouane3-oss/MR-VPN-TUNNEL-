@@ -146,6 +146,7 @@ class SshVpnService : VpnService() {
     private var speedMonitorJob: Job? = null
     private var xrayPingMonitorJob: Job? = null
     private var updateWatchdogJob: Job? = null
+    private var quickRecheckJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     // Random local SOCKS5 port chosen once per service run (instead of a
@@ -1716,6 +1717,38 @@ class SshVpnService : VpnService() {
         }
     }
 
+    // إلا فشل الفحص الأول بالكامل، كنعاودو محاولة وحدة إضافية بعد هاد
+    // المدة - كافية لأغلب حالات "إنترنت ضعيف مؤقتا" (ثواني لدقائق)، بلا
+    // ما نزيدو حمل حقيقي (محاولة وحدة، ماشي حلقة) على GitHub/jsDelivr أو
+    // بطارية المستخدم فبالضبط الوقت لي إنترنتو ضعيف.
+    private val QUICK_RECHECK_DELAY_MS = 5 * 60 * 1000L
+
+    /**
+     * كتخدم غير ملي الفحص الأول (checkOnceAsync) فشل بالكامل - أرجح سبب
+     * إنترنت ضعيف/غير مستقر فتلك اللحظة بالضبط، ماشي عطل دائم. محاولة
+     * وحدة إضافية بعد 5 دقايق (بدل ما نستناو 30 دقيقة الفحص الدوري
+     * العادي) - توازن معقول بين السرعة والحمل: أغلب حالات "إنترنت ضعيف
+     * مؤقت" كتصلح فدقائق قليلة، فمحاولة وحدة كافية؛ إلا مازال الإنترنت
+     * ضعيف بعد 5 دقايق، الفحص الدوري العادي (كل 30 دقيقة) كيكمل بروحو
+     * بلا حاجة لحلقة إضافية تزيد الحمل بلا فائدة حقيقية.
+     */
+    private fun startQuickRecheck(epoch: Long) {
+        quickRecheckJob?.cancel()
+        quickRecheckJob = scope.launch {
+            delay(QUICK_RECHECK_DELAY_MS)
+            if (!isSessionCurrent(epoch)) return@launch
+            val newer = try {
+                UpdateManager.checkNow(applicationContext, socksPort)
+            } catch (_: Throwable) {
+                null
+            }
+            if (newer != null && isSessionCurrent(epoch)) {
+                log("Update Check: New Version Available - disconnecting.")
+                stopVpn(STATE_DISCONNECTED)
+            }
+        }
+    }
+
     private fun broadcastStatus(state: String, epoch: Long? = null) {
         // A stale connection attempt must never publish a state after Stop
         // or after a newer START. DISCONNECTED/FAILED are terminal states
@@ -1752,6 +1785,14 @@ class SshVpnService : VpnService() {
                         log("Update Check: New Version Available - disconnecting.")
                         stopVpn(STATE_DISCONNECTED)
                     }
+                },
+                onCheckFailed = {
+                    // الفحص الأول فشل بالكامل (أرجح سبب: إنترنت ضعيف/غير
+                    // مستقر فتلك اللحظة بالضبط، ماشي مشكل دائم) - بدل ما
+                    // نستناو الفحص الدوري الكامل (30 دقيقة)، كنبداو حلقة
+                    // فحص سريع (كل دقيقتين) باش نلقاو أول لحظة يستقر
+                    // فيها الإنترنت.
+                    startQuickRecheck(watchdogEpoch)
                 }
             )
             // فحص دوري إضافي وقت مازال الاتصال شغال (الأول ديال
@@ -1765,6 +1806,8 @@ class SshVpnService : VpnService() {
         } else {
             updateWatchdogJob?.cancel()
             updateWatchdogJob = null
+            quickRecheckJob?.cancel()
+            quickRecheckJob = null
             // Any state other than READY (RECONNECTING, WAITING_NETWORK,
             // FAILED, DISCONNECTED...) must stop the speed monitor - it was
             // previously left running across state changes, which kept

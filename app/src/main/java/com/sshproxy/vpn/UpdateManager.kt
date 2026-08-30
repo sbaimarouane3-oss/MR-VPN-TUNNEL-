@@ -84,26 +84,36 @@ object UpdateManager {
      * the server already told the app it's outdated on this very
      * connection.
      */
+     * [onCheckFailed], if given, runs when this very first check genuinely
+     * couldn't reach either source (weak/unstable internet at that exact
+     * moment) - distinct from "reached the server, already up to date".
+     * SshVpnService uses this to start a short-interval quick-recheck loop,
+     * so a connection that starts on shaky internet doesn't have to wait
+     * the full 30-minute periodic interval once the internet stabilizes.
+     */
     fun checkOnceAsync(
         context: Context,
         socksPort: Int? = null,
         onLog: ((String) -> Unit)? = null,
         onNewerFound: (() -> Unit)? = null,
-        onAttempt: ((String, Boolean) -> Unit)? = null
+        onAttempt: ((String, Boolean) -> Unit)? = null,
+        onCheckFailed: (() -> Unit)? = null
     ) {
         if (checkedThisProcess) return
         checkedThisProcess = true
         val appContext = context.applicationContext
         scope.launch {
             val info = checkNow(appContext, socksPort, onAttempt)
+            val succeeded = lastCheckSucceeded
             onLog?.invoke(
                 when {
-                    info == null && !lastCheckSucceeded -> "Update Check: Failed (unreachable via tunnel and direct network)."
+                    info == null && !succeeded -> "Update Check: Failed (unreachable via tunnel and direct network)."
                     info != null -> "Update Check: New Version Available."
                     else -> "Update Check: Up To Date."
                 }
             )
             if (info != null) onNewerFound?.invoke()
+            if (info == null && !succeeded) onCheckFailed?.invoke()
         }
     }
 
@@ -111,7 +121,10 @@ object UpdateManager {
     // نسخة جديدة ولا لا) - كنستعملوها هنا غير باش نميزو رسالة اللوگ
     // "Failed" عن "Up To Date" فـcheckOnceAsync (checkNow() كترجع null
     // فحالتين مختلفتين: فشل الاتصال، أو الاتصال نجح ولكن ماكاينش تحديث).
-    @Volatile private var lastCheckSucceeded = false
+    // مقروءة من برا (SshVpnService) باش تعرف واش الفحص الأخير نجح فعلا،
+    // بلا ما تقدر تبدلها.
+    @Volatile var lastCheckSucceeded = false
+        private set
 
     /**
      * الفحص الفعلي: كيدير fetch، كيسجل (save) إلا لقى نسخة أجد من
