@@ -301,6 +301,12 @@ class SshVpnService : VpnService() {
         firstReconnectFailureAt = 0L
         socksPort = (20000..59000).random()
 
+        // كل CONNECT حقيقي جديد (بما فيه إعادة الاتصال اليدوية من
+        // STATE_WAITING_USER_ACTION، اللي ماكتقتلش الـprocess) خاصو
+        // يعطي فرصة لفحص تحديث فوري واحد على أول STATE_READY ديالو -
+        // شوف توثيق UpdateManager.resetForNewSession().
+        UpdateManager.resetForNewSession()
+
         if (session != null || tunFd != null || socksServer != null) {
             cleanupResources()
         }

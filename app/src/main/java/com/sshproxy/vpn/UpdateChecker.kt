@@ -55,18 +55,29 @@ object UpdateChecker {
     private data class Attempt(val label: String, val url: String, val socksPort: Int?, val isRaw: Boolean)
 
     /**
-     * كل 4 محاولات (raw+tunnel، raw+direct، jsdelivr+tunnel، jsdelivr+direct)
-     * كيتصاوبو بالتوازي حقيقي، بلا ما نأخرو أي وحدة منهم - هادشي مهم
-     * لأن بعض الشبكات كتبلوكي raw.githubusercontent.com بالكامل (لاحظنا
-     * هادشي: Maroc Telecom)، فـjsDelivr خاصها الفرصة الكاملة من البداية
-     * باش توصل، ماشي غير بعد ما يفوت الوقت الكلي ديال raw.
+     * اختيار المسار حصري بحال واحد، ماشي سباق (race) بين الاثنين:
      *
-     * فنفس الوقت، raw هي المصدر الحقيقي بلا cache (المحتوى ديالها ديما
-     * آخر نسخة push-ات فعليا)، بينما jsDelivr CDN كتخبى المحتوى لساعات
-     * وحتى أيام - فملي توصل نتيجة من raw، كنرجعوها فورا حتى لو jsDelivr
-     * وصلات قبلها بنتيجة (potentially قديمة). غير إلا خلص الوقت الكلي
-     * بلا ما توصل أي نتيجة من raw، كنستعملو نتيجة jsDelivr إلا كانت
-     * وصلات (أحسن من "unreachable" كليا).
+     *  - socksPort != null: يعني كاين نفق نشط (الاتصال الحالي كيستعمل
+     *    SOCKS5 - سواء SSH بجميع أنواعو: PROXY/PAYLOAD/TLS/PROXY-PAYLOAD..
+     *    أو XRAY: V2Ray/Shadowsocks/VLESS..). كنجربو غير عبر نفس
+     *    socksPort (raw+tunnel وjsdelivr+tunnel) - بلا ما نديرو ولا طلب
+     *    "direct" واحد برا النفق، حيت هادشي غادي يسرب طلب شبكة خارج
+     *    الـVPN فالوقت لي المستخدم مفروض محمي بيه بالكامل.
+     *  - socksPort == null: ماكاينش نفق نشط (اتصال إنترنت حقيقي بلا
+     *    VPN/SOCKS5) - كنجربو غير المسار المباشر العادي (raw+direct
+     *    وjsdelivr+direct)، بلا ما نجبرو SOCKS5 لي أصلا ماكاينش.
+     *
+     * فداخل كل مسار، raw وjsdelivr مازال كيتصاوبو بالتوازي حقيقي (بلا
+     * تأخير) لنفس السبب القديم: بعض الشبكات (Maroc Telecom مثلا) كتبلوكي
+     * raw.githubusercontent.com بالكامل، فـjsDelivr خاصها الفرصة الكاملة
+     * من البداية.
+     *
+     * raw هي المصدر الحقيقي بلا cache (المحتوى ديالها ديما آخر نسخة
+     * push-ات فعليا)، بينما jsDelivr CDN كتخبى المحتوى لساعات وحتى أيام -
+     * فملي توصل نتيجة من raw، كنرجعوها فورا حتى لو jsDelivr وصلات قبلها
+     * بنتيجة (potentially قديمة). غير إلا خلص الوقت الكلي بلا ما توصل أي
+     * نتيجة من raw، كنستعملو نتيجة jsDelivr إلا كانت وصلات (أحسن من
+     * "unreachable" كليا).
      *
      * ملاحظة (raw+tunnel/jsdelivr+tunnel تحديداً): هاد الطلبات كتخرج من
      * IP السيرفر SSH نفسو (exit IP) - مشترك بين بزاف المستخدمين، وممكن
@@ -76,10 +87,13 @@ object UpdateChecker {
      */
     fun fetchBest(socksPort: Int? = null): UpdateInfo? {
         val attempts = mutableListOf<Attempt>()
-        if (socksPort != null) attempts += Attempt("raw+tunnel", UPDATE_JSON_URL_RAW, socksPort, true)
-        attempts += Attempt("raw+direct", UPDATE_JSON_URL_RAW, null, true)
-        if (socksPort != null) attempts += Attempt("jsdelivr+tunnel", UPDATE_JSON_URL_JSDELIVR, socksPort, false)
-        attempts += Attempt("jsdelivr+direct", UPDATE_JSON_URL_JSDELIVR, null, false)
+        if (socksPort != null) {
+            attempts += Attempt("raw+tunnel", UPDATE_JSON_URL_RAW, socksPort, true)
+            attempts += Attempt("jsdelivr+tunnel", UPDATE_JSON_URL_JSDELIVR, socksPort, false)
+        } else {
+            attempts += Attempt("raw+direct", UPDATE_JSON_URL_RAW, null, true)
+            attempts += Attempt("jsdelivr+direct", UPDATE_JSON_URL_JSDELIVR, null, false)
+        }
 
         val pool = Executors.newFixedThreadPool(attempts.size)
         try {

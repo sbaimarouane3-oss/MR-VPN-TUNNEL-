@@ -59,6 +59,28 @@ object UpdateManager {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     /**
+     * يصفّر حارس "مرة وحدة فحياة الـprocess". فالحالة العادية هادي ماشي
+     * ضرورية أصلا: stopVpn() فـSshVpnService كتقتل الـprocess بأكمله
+     * (Process.killProcess) فكل انقطاع حقيقي - وهادشي كيمسح الحالة
+     * الثابتة ديال هاد الكائن (checkedThisProcess) بشكل طبيعي، فالاتصال
+     * الجديد كيبدا من process جديد كليا.
+     *
+     * الاستثناء الوحيد: STATE_WAITING_USER_ACTION (بعد ساعة كاملة من
+     * فشل إعادة الاتصال التلقائي المتواصل) - الـprocess كيبقى حي
+     * (autoReconnectSuspended = true، بلا stopVpn()) بانتظار المستخدم
+     * يدوس Connect من جديد. فهاد الحالة، checkedThisProcess كان
+     * كيبقى true من الاتصال القديم، ويمنع فحص فوري على الاتصال الجديد.
+     *
+     * SshVpnService كتنادي هاد الدالة مرة وحدة فبداية كل onStartCommand
+     * جديد (ACTION_CONNECT حقيقي، ماشي reconnect داخلي) - آمنة ومكررة
+     * بلا ضرر فالحالة العادية (الـprocess جديد أصلا، already false)،
+     * وكتصلح غير الاستثناء المذكور فوق.
+     */
+    fun resetForNewSession() {
+        checkedThisProcess = false
+    }
+
+    /**
      * Fire-and-forget: launches the check on a background coroutine and
      * returns immediately. Safe to call from SshVpnService right after
      * broadcasting STATE_READY - it never touches the VPN, never throws,
@@ -97,7 +119,13 @@ object UpdateManager {
             val info = checkNow(appContext, socksPort)
             onLog?.invoke(
                 when {
-                    info == null && !lastCheckSucceeded -> "Update Check: Failed (unreachable via tunnel and direct network)."
+                    // الرسالة كتبين المسار الفعلي لي تجرب: عبر النفق
+                    // (socksPort != null) أو مباشر (socksPort == null) -
+                    // fetchBest دابا كيجرب مسار واحد حصري، ماشي الاثنين
+                    // مع بعض (شوف UpdateChecker.fetchBest).
+                    info == null && !lastCheckSucceeded ->
+                        if (socksPort != null) "Update Check: Failed (unreachable via tunnel)."
+                        else "Update Check: Failed (unreachable - no direct internet)."
                     info != null -> "Update Check: New Version Available."
                     else -> "Update Check: Up To Date."
                 }
