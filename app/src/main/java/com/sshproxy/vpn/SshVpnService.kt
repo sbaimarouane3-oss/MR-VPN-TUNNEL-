@@ -1685,7 +1685,7 @@ class SshVpnService : VpnService() {
     // 30 دقيقة توازن معقول: قريب بزاف باش المستخدمين ما يبقاوش متصلين
     // بنسخة قديمة مدة طويلة بعد ما تبان نسخة جديدة، وبعيد بزاف باش
     // ماتزيدش حمل شبكة/سيرفر بلا فائدة.
-    private const val UPDATE_RECHECK_INTERVAL_MS = 30 * 60 * 1000L
+    private val UPDATE_RECHECK_INTERVAL_MS = 30 * 60 * 1000L
 
     /**
      * كيعاود يفحص وجود تحديث كل [UPDATE_RECHECK_INTERVAL_MS] وقت الاتصال
