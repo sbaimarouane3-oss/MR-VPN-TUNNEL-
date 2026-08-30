@@ -83,7 +83,7 @@ object UpdateManager {
      * could keep using an outdated build for a long stretch even though
      * the server already told the app it's outdated on this very
      * connection.
-     */
+     *
      * [onCheckFailed], if given, runs when this very first check genuinely
      * couldn't reach either source (weak/unstable internet at that exact
      * moment) - distinct from "reached the server, already up to date".
