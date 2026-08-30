@@ -95,17 +95,22 @@ object UpdateChecker {
             val deadline = System.currentTimeMillis() + OVERALL_TIMEOUT_MS
             var received = 0
             var winner: UpdateInfo? = null
+            val reportedLabels = mutableSetOf<String>()
             while (received < attempts.size) {
                 val remaining = deadline - System.currentTimeMillis()
                 if (remaining <= 0) break
                 val future = completionService.poll(remaining, TimeUnit.MILLISECONDS) ?: break
                 received++
                 val (label, isRaw, result) = try { future.get() } catch (_: Throwable) { Triple("?", false, null) }
+                reportedLabels += label
                 onAttempt?.invoke(label, result != null)
                 if (result == null) continue
                 if (winner == null && isRaw) winner = result
                 if (jsDelivrFallback == null && !isRaw) jsDelivrFallback = result
                 if (winner != null) break
+            }
+            attempts.forEach { attempt ->
+                if (attempt.label !in reportedLabels) onAttempt?.invoke(attempt.label, false)
             }
             return winner ?: jsDelivrFallback
         } finally {
