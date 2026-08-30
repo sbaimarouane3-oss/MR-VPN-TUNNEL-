@@ -1703,9 +1703,7 @@ class SshVpnService : VpnService() {
                 delay(UPDATE_RECHECK_INTERVAL_MS)
                 if (!isSessionCurrent(epoch)) break
                 val newer = try {
-                    UpdateManager.checkNow(applicationContext, socksPort) { label, success ->
-                        log("Update Check [$label]: ${if (success) "OK" else "failed"}.")
-                    }
+                    UpdateManager.checkNow(applicationContext, socksPort)
                 } catch (_: Throwable) {
                     null
                 }
@@ -1754,8 +1752,7 @@ class SshVpnService : VpnService() {
                         log("Update Check: New Version Available - disconnecting.")
                         stopVpn(STATE_DISCONNECTED)
                     }
-                },
-                onAttempt = { label, success -> log("Update Check [$label]: ${if (success) "OK" else "failed"}.") }
+                }
             )
             // فحص دوري إضافي وقت مازال الاتصال شغال (الأول ديال
             // checkOnceAsync كيخدم مرة وحدة فحياة الـprocess) - بلا

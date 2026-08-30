@@ -43,16 +43,33 @@ object UpdateChecker {
     private const val UPDATE_JSON_URL_JSDELIVR =
         "https://cdn.jsdelivr.net/gh/marouanegerman5-hue/update.json@main/update.json"
 
-    // كل محاولة وحدة (call) عندها هاد الـtimeout، وكل attempt (tunnel/direct
-    // × raw/jsdelivr) كتعاود لـMAX_RETRIES مرات إلا فشلت - باش نقاوموا
-    // فشل لحظي/عابر (بحال IP مشترك ديال السيرفر مزدحم لحظتها) بلا ما
-    // نعتبروه فشل نهائي من أول محاولة.
-    private const val TIMEOUT_MS = 5000
-    private const val MAX_RETRIES = 2
-    private const val RETRY_DELAY_MS = 400L
-    private const val OVERALL_TIMEOUT_MS = (TIMEOUT_MS * MAX_RETRIES) + (RETRY_DELAY_MS * (MAX_RETRIES - 1)) + 2000L
+    // direct: إنترنت الهاتف مباشرة، ماعندهاش علاقة بسرعة السيرفر - مهلة
+    // عادية كافية.
+    private const val TIMEOUT_MS_DIRECT = 5000
+    private const val RETRIES_DIRECT = 2
 
-    private data class Attempt(val label: String, val url: String, val socksPort: Int?, val isRaw: Boolean)
+    // tunnel: كتدوز عبر السيرفر (SSH exit) - عندها تأخير إضافي طبيعي
+    // (المسافة للسيرفر + المسافة من السيرفر لـGitHub)، خصوصا سيرفرات
+    // بطيئة/بعيدة. مهلة أطول وretries أكثر باش نعطيوها فرصة حقيقية بلا
+    // ما نعتبروها "فشل" غير لأن السيرفر بطيء.
+    private const val TIMEOUT_MS_TUNNEL = 9000
+    private const val RETRIES_TUNNEL = 3
+
+    private const val RETRY_DELAY_MS = 400L
+    private val OVERALL_TIMEOUT_MS =
+        maxOf(
+            (TIMEOUT_MS_DIRECT * RETRIES_DIRECT) + (RETRY_DELAY_MS * (RETRIES_DIRECT - 1)),
+            (TIMEOUT_MS_TUNNEL * RETRIES_TUNNEL) + (RETRY_DELAY_MS * (RETRIES_TUNNEL - 1))
+        ) + 2000L
+
+    private data class Attempt(
+        val label: String,
+        val url: String,
+        val socksPort: Int?,
+        val isRaw: Boolean,
+        val timeoutMs: Int,
+        val maxRetries: Int
+    )
 
     /**
      * كل 4 محاولات (raw+tunnel، raw+direct، jsdelivr+tunnel، jsdelivr+direct)
@@ -69,24 +86,28 @@ object UpdateChecker {
      * وصلات (أحسن من "unreachable" كليا).
      *
      * ملاحظة (raw+tunnel/jsdelivr+tunnel تحديداً): هاد الطلبات كتخرج من
-     * IP السيرفر SSH نفسو (exit IP) - مشترك بين بزاف المستخدمين، وممكن
-     * GitHub/jsDelivr يبطؤوه/يبلوكيوه مؤقتاً إلا زاد الحمل عليه (rate
-     * limiting). كل attempt (فيها MAX_RETRIES محاولات) هي احتياط ضد
-     * هاد النوع ديال الفشل العابر.
+     * IP السيرفر SSH نفسو (exit IP)، وسيرفر بطيء/بعيد هي حالة طبيعية
+     * ماشي عطل - فعندها مهلة وretries أكثر (TIMEOUT_MS_TUNNEL/
+     * RETRIES_TUNNEL) من محاولات direct، باش سيرفر بطيء وحدو ما يخليش
+     * الفحص يفشل بالكامل قبل ما يعطى فرصة كافية يجاوب.
      */
     fun fetchBest(socksPort: Int? = null, onAttempt: ((String, Boolean) -> Unit)? = null): UpdateInfo? {
         val attempts = mutableListOf<Attempt>()
-        if (socksPort != null) attempts += Attempt("raw+tunnel", UPDATE_JSON_URL_RAW, socksPort, true)
-        attempts += Attempt("raw+direct", UPDATE_JSON_URL_RAW, null, true)
-        if (socksPort != null) attempts += Attempt("jsdelivr+tunnel", UPDATE_JSON_URL_JSDELIVR, socksPort, false)
-        attempts += Attempt("jsdelivr+direct", UPDATE_JSON_URL_JSDELIVR, null, false)
+        if (socksPort != null) {
+            attempts += Attempt("raw+tunnel", UPDATE_JSON_URL_RAW, socksPort, true, TIMEOUT_MS_TUNNEL, RETRIES_TUNNEL)
+        }
+        attempts += Attempt("raw+direct", UPDATE_JSON_URL_RAW, null, true, TIMEOUT_MS_DIRECT, RETRIES_DIRECT)
+        if (socksPort != null) {
+            attempts += Attempt("jsdelivr+tunnel", UPDATE_JSON_URL_JSDELIVR, socksPort, false, TIMEOUT_MS_TUNNEL, RETRIES_TUNNEL)
+        }
+        attempts += Attempt("jsdelivr+direct", UPDATE_JSON_URL_JSDELIVR, null, false, TIMEOUT_MS_DIRECT, RETRIES_DIRECT)
 
         val pool = Executors.newFixedThreadPool(attempts.size)
         try {
             val completionService = ExecutorCompletionService<Triple<String, Boolean, UpdateInfo?>>(pool)
             attempts.forEach { attempt ->
                 completionService.submit(Callable {
-                    val result = fetchWithRetry(attempt.url, attempt.socksPort)
+                    val result = fetchWithRetry(attempt.url, attempt.socksPort, attempt.timeoutMs, attempt.maxRetries)
                     Triple(attempt.label, attempt.isRaw, result)
                 })
             }
@@ -118,11 +139,11 @@ object UpdateChecker {
         }
     }
 
-    /** كيعاود fetchOne حتى MAX_RETRIES مرات (بفاصل RETRY_DELAY_MS) قبل ما يعتبرها فشل نهائي. */
-    private fun fetchWithRetry(url: String, socksPort: Int?): UpdateInfo? {
-        repeat(MAX_RETRIES) { attemptIndex ->
-            fetchOne(url, socksPort)?.let { return it }
-            if (attemptIndex < MAX_RETRIES - 1) {
+    /** كيعاود fetchOne حتى maxRetries مرات (بفاصل RETRY_DELAY_MS) قبل ما يعتبرها فشل نهائي. */
+    private fun fetchWithRetry(url: String, socksPort: Int?, timeoutMs: Int, maxRetries: Int): UpdateInfo? {
+        repeat(maxRetries) { attemptIndex ->
+            fetchOne(url, socksPort, timeoutMs)?.let { return it }
+            if (attemptIndex < maxRetries - 1) {
                 try { Thread.sleep(RETRY_DELAY_MS) } catch (_: InterruptedException) { return null }
             }
         }
@@ -130,9 +151,9 @@ object UpdateChecker {
     }
 
     /** Backward-compatible single-attempt fetch (direct network only, or via a given tunnel). */
-    fun fetch(socksPort: Int? = null): UpdateInfo? = fetchOne(UPDATE_JSON_URL_RAW, socksPort)
+    fun fetch(socksPort: Int? = null): UpdateInfo? = fetchOne(UPDATE_JSON_URL_RAW, socksPort, TIMEOUT_MS_DIRECT)
 
-    private fun fetchOne(urlString: String, socksPort: Int?): UpdateInfo? {
+    private fun fetchOne(urlString: String, socksPort: Int?, timeoutMs: Int): UpdateInfo? {
         var conn: HttpURLConnection? = null
         return try {
             val url = URL(urlString)
@@ -145,8 +166,8 @@ object UpdateChecker {
             } else {
                 url.openConnection() as HttpURLConnection
             }
-            conn.connectTimeout = TIMEOUT_MS
-            conn.readTimeout = TIMEOUT_MS
+            conn.connectTimeout = timeoutMs
+            conn.readTimeout = timeoutMs
             conn.requestMethod = "GET"
             conn.useCaches = false
             conn.setRequestProperty("Cache-Control", "no-cache")
