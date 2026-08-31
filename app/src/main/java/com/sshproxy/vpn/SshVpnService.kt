@@ -403,12 +403,6 @@ class SshVpnService : VpnService() {
         val udpgwPort = intent.getIntExtra("udpgwPort", 7300)
         val maskLogs = intent.getBooleanExtra("maskLogs", false)
 
-        // تشخيص مؤقت: نبينو بالضبط شنو توصل فالـIntent (بلا ما نستنو حتى
-        // للفحص الفعلي فـconnect()) - باش نعرفو واش المشكل فالواجهة
-        // (ماكتصيفطش القيمة الصحيحة) أو فالخدمة (كتوصل صحيحة ولكن
-        // كتضيع بعدها).
-        log("DEBUG: udpgwEnabled=$udpgwEnabled udpgwPort=$udpgwPort")
-
         // تحديد تاگ الجلسة قبل أي log - بحال طلب المستخدم (نقطة 7): SSH-PROXY
         // وSSH-PROXY-PAYLOAD ماخصهمش يختلطو. نفس الحساب لي كان قبل فـ connect()
         // (protocolLabel) - غير أننا كنديروه هنا بكري باش يغطي حتى "Starting
@@ -748,15 +742,6 @@ class SshVpnService : VpnService() {
                     }
                 } else {
                     consecutiveFailures++
-                    // مهم: قبل كان هاد الفرع صامت كليا (بلا أي سطر فاللوگ)
-                    // - المستخدم كيبقى شايف "Connected" بلا ما يعرف
-                    // علاش الإنترنت ماخدامش. نسجلو تحذير وحد فقط (ماشي
-                    // كل مرة) ملي أول ping يفشل، باش يبين فاللوگ أن
-                    // المشكل فالتوجيه/forwarding عبر السيرفر، ماشي
-                    // اتصال SSH بذاتو (لي مازال "Connected").
-                    if (consecutiveFailures == 1) {
-                        log("WARN: Ping Failed (tunnel connected but forwarding may be restricted by the server).")
-                    }
                     // Second, independent check for "no real network" beyond
                     // the NetworkCallback: some OEM network stacks are slow
                     // or unreliable about delivering onLost, which would
