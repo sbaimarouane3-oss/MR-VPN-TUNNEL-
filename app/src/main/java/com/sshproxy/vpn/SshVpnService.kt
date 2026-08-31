@@ -714,7 +714,24 @@ class SshVpnService : VpnService() {
                 if (!sessionAlive) {
                     log("ERROR: SSH Session Closed.")
                     consecutiveFailures = 0
-                    scheduleSmartReconnect("session-closed", debounceMs = 0)
+                    if (hasUsableNetwork()) {
+                        // Real network is there - worth spending a full
+                        // reconnect attempt on it.
+                        networkAvailable = true
+                        scheduleSmartReconnect("session-closed", debounceMs = 0)
+                    } else {
+                        // No real network yet: don't burn a full 6-attempt
+                        // smartReconnect cycle against a dead network - that
+                        // would keep `reconnecting` stuck true for a long
+                        // stretch and make the NetworkCallback's onAvailable
+                        // path find a reconnect already "in progress" and
+                        // skip it, so the app never gets a real attempt in
+                        // once the network genuinely comes back. Just mark
+                        // WAITING_NETWORK and let the next tick of this same
+                        // loop (or onAvailable) trigger the real reconnect.
+                        if (networkAvailable) networkAvailable = false
+                        broadcastStatus(STATE_WAITING_NETWORK, monitorEpoch)
+                    }
                     continue
                 }
 
