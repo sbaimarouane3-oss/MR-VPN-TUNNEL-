@@ -403,6 +403,12 @@ class SshVpnService : VpnService() {
         val udpgwPort = intent.getIntExtra("udpgwPort", 7300)
         val maskLogs = intent.getBooleanExtra("maskLogs", false)
 
+        // تشخيص مؤقت: نبينو بالضبط شنو توصل فالـIntent (بلا ما نستنو حتى
+        // للفحص الفعلي فـconnect()) - باش نعرفو واش المشكل فالواجهة
+        // (ماكتصيفطش القيمة الصحيحة) أو فالخدمة (كتوصل صحيحة ولكن
+        // كتضيع بعدها).
+        log("DEBUG: udpgwEnabled=$udpgwEnabled udpgwPort=$udpgwPort")
+
         // تحديد تاگ الجلسة قبل أي log - بحال طلب المستخدم (نقطة 7): SSH-PROXY
         // وSSH-PROXY-PAYLOAD ماخصهمش يختلطو. نفس الحساب لي كان قبل فـ connect()
         // (protocolLabel) - غير أننا كنديروه هنا بكري باش يغطي حتى "Starting
