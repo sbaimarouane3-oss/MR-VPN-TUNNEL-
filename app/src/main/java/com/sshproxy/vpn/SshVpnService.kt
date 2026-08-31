@@ -1166,10 +1166,23 @@ class SshVpnService : VpnService() {
 
                     // Real check: confirm the internet is actually passing
                     // through the tunnel before declaring success (like HTTP
-                    // Custom's 200 OK ping)
-                    delay(400)
+                    // Custom's 200 OK ping). SOCKS5 reporting "ready" doesn't
+                    // mean traffic is already flowing through it at that
+                    // exact instant, so we give it a moment to settle and
+                    // retry the probe a few times instead of failing the
+                    // whole reconnect on a single early/borderline check.
+                    delay(1500)
                     ensureSessionCurrent(myEpoch)
-                    if (verifyTunnelConnectivity()) {
+                    var connectivityOk = false
+                    for (probeAttempt in 0 until 3) {
+                        ensureSessionCurrent(myEpoch)
+                        if (verifyTunnelConnectivity()) {
+                            connectivityOk = true
+                            break
+                        }
+                        if (probeAttempt < 2) delay(1000)
+                    }
+                    if (connectivityOk) {
                         ensureSessionCurrent(myEpoch)
                         log("Connection Established.")
                         success = true
@@ -1271,9 +1284,18 @@ class SshVpnService : VpnService() {
                     ensureSessionCurrent(myEpoch)
                     log("SOCKS5 Proxy Ready.")
 
-                    delay(400)
+                    delay(1500)
                     ensureSessionCurrent(myEpoch)
-                    if (verifyTunnelConnectivity()) {
+                    var connectivityOk = false
+                    for (probeAttempt in 0 until 3) {
+                        ensureSessionCurrent(myEpoch)
+                        if (verifyTunnelConnectivity()) {
+                            connectivityOk = true
+                            break
+                        }
+                        if (probeAttempt < 2) delay(1000)
+                    }
+                    if (connectivityOk) {
                         ensureSessionCurrent(myEpoch)
                         log("Connection Established.")
                         success = true
@@ -1349,8 +1371,12 @@ class SshVpnService : VpnService() {
     // ماتوقف طول ما الـVPN شغال - كانت كتخلق 3 threads جداد وتسدهم فكل
     // مرة (churn تقيل على GC/CPU باستمرار). داباهي threads ثابتين، كيتبنيو
     // مرة وحدة وكيتقادو غير عند stopVpn/onDestroy.
+    // x2 و ماشي بحال عدد الـprobe URLs بالضبط: cancel(true) ماكيضمنش وقف
+    // فوري ديال probe عالق فـsocket read (HttpURLConnection ماكيرد بزربة
+    // على interrupt) - إلا بقا probe قديم عالق فـthread، الفحص الجاي خاصو
+    // يلقى threads حرين باش يبدا مباشرة، ماشي يتسنى فالـqueue.
     private val latencyProbeExecutor by lazy {
-        java.util.concurrent.Executors.newFixedThreadPool(connectivityProbeUrls.size)
+        java.util.concurrent.Executors.newFixedThreadPool(connectivityProbeUrls.size * 2)
     }
 
     /** Same check as [verifyTunnelConnectivity] but returns the round-trip time in ms (null on failure), so the user can see connection speed in the log. Runs all probes in parallel and returns as soon as the first one succeeds, instead of waiting on each sequentially (which could take up to timeoutMs * probe count). */
