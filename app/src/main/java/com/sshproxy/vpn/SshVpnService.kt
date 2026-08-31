@@ -288,7 +288,18 @@ class SshVpnService : VpnService() {
             // connect/reconnect that finishes later is now stale and cannot
             // publish CONNECTING/READY or replace the new session.
             stopRequested = true
-            stopVpn()
+            // stopVpn() is dispatched off this thread on purpose: onStartCommand()
+            // always runs on this process's main thread, and stopVpn()->cleanupResources()
+            // calls into JSch/native code (session.disconnect(), nativeStopTunnel(),
+            // XrayCoreManager.stop()) that can occasionally block on a stuck
+            // socket/native call instead of throwing. Running it inline here used to
+            // freeze the whole :vpnproc main thread forever when that happened - Stop
+            // never finished, the old tunnel stayed up, and every later intent
+            // (a fresh Connect, a server switch) queued behind it and never ran until
+            // the app was force-stopped. Dispatching to IO keeps this thread free.
+            scope.launch(Dispatchers.IO) {
+                stopVpn()
+            }
             return START_NOT_STICKY
         }
 
@@ -1576,7 +1587,34 @@ class SshVpnService : VpnService() {
 
         vpnActive = false
         reconnectDebounceJob?.cancel()
+
+        // Watchdog: cleanupResources() below can call into JSch/native code
+        // (session.disconnect(), nativeStopTunnel(), XrayCoreManager.stop())
+        // that occasionally blocks forever instead of throwing (stuck socket,
+        // native mutex) rather than a normal fast failure. A real Stop must
+        // never depend on that call ever returning - a separate raw thread
+        // (independent of whichever thread/looper ends up running this
+        // function - IO dispatcher, onDestroy, onRevoke) forces the exact
+        // same shutdown a few seconds later if cleanupResources() hasn't
+        // finished by then, so the old tunnel/process never outlives Stop.
+        val finished = java.util.concurrent.atomic.AtomicBoolean(false)
+        val watchdog = Thread {
+            try { Thread.sleep(4000) } catch (_: InterruptedException) { return@Thread }
+            if (finished.compareAndSet(false, true)) {
+                try { broadcastStatus(finalState) } catch (_: Throwable) { }
+                try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Throwable) { }
+                Process.killProcess(Process.myPid())
+            }
+        }.apply { isDaemon = true; start() }
+
         cleanupResources()
+
+        if (!finished.compareAndSet(false, true)) {
+            // Watchdog already fired and killed the process - nothing left to do.
+            return
+        }
+        watchdog.interrupt()
+
         if (finalState == STATE_FAILED) {
             // سطر log الخطأ الحقيقي (Server Unreachable...) اتسجل ديجا قبل
             // ما نوصلو لهنا - "Disconnected." هنا يقدر يخلط المستخدم أنو
