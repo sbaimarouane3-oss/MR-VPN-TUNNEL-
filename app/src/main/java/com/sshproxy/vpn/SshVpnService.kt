@@ -1169,18 +1169,22 @@ class SshVpnService : VpnService() {
                     // Custom's 200 OK ping). SOCKS5 reporting "ready" doesn't
                     // mean traffic is already flowing through it at that
                     // exact instant, so we give it a moment to settle and
-                    // retry the probe a few times instead of failing the
-                    // whole reconnect on a single early/borderline check.
-                    delay(1500)
+                    // retry the probe instead of failing the whole reconnect
+                    // on a single early/borderline check - but bounded, so a
+                    // genuinely dead attempt doesn't tie up the whole
+                    // 6-attempt loop for minutes (that made SSH reconnects
+                    // look "stuck" compared to Xray's faster handshake).
+                    delay(800)
                     ensureSessionCurrent(myEpoch)
                     var connectivityOk = false
-                    for (probeAttempt in 0 until 3) {
+                    for (probeAttempt in 0 until 2) {
+                        if (!networkAvailable) break
                         ensureSessionCurrent(myEpoch)
-                        if (verifyTunnelConnectivity()) {
+                        if (verifyTunnelConnectivity(3000)) {
                             connectivityOk = true
                             break
                         }
-                        if (probeAttempt < 2) delay(1000)
+                        if (probeAttempt < 1) delay(800)
                     }
                     if (connectivityOk) {
                         ensureSessionCurrent(myEpoch)
@@ -1284,16 +1288,17 @@ class SshVpnService : VpnService() {
                     ensureSessionCurrent(myEpoch)
                     log("SOCKS5 Proxy Ready.")
 
-                    delay(1500)
+                    delay(800)
                     ensureSessionCurrent(myEpoch)
                     var connectivityOk = false
-                    for (probeAttempt in 0 until 3) {
+                    for (probeAttempt in 0 until 2) {
+                        if (!networkAvailable) break
                         ensureSessionCurrent(myEpoch)
-                        if (verifyTunnelConnectivity()) {
+                        if (verifyTunnelConnectivity(3000)) {
                             connectivityOk = true
                             break
                         }
-                        if (probeAttempt < 2) delay(1000)
+                        if (probeAttempt < 1) delay(800)
                     }
                     if (connectivityOk) {
                         ensureSessionCurrent(myEpoch)
