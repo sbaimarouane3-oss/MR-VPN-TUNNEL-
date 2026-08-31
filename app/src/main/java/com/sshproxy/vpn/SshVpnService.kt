@@ -310,6 +310,14 @@ class SshVpnService : VpnService() {
         // بحال HTTP Custom لي كيبين معلومات الجهاز/الشبكة مرة وحدة فبداية
         // كل محاولة اتصال، قبل أي log مرتبط بالبروتوكول.
         logTag = ""
+        // مسح اللوگ من هنا (جوا SshVpnService، نفس الـprocess لي كيكتب
+        // فيه كل log() تالي)، ماشي من MainActivity (process منفصل
+        // :vpnproc مقابل process الواجهة) - كان قبل هادشي كيسبب race
+        // نادر: MainActivity كتمسح اللوگ فprocess ديالها، وهاد الخدمة
+        // (فprocess آخر) كتبدا تكتب أول سطور تقريبا فنفس اللحظة، وفبعض
+        // الأحيان الترتيب كان كيتقلب (كتابة الخدمة توصل قبل، والمسح
+        // اللاحق كيمحيها) - كيخلي اللوگ يبان فارغ رغم أن الاتصال نجح.
+        LogManager.clear(applicationContext)
         logDeviceAndNetworkInfo()
 
         // بوابة صارمة: كنمنعو أي اتصال (SSH ولا Xray) إلا كان الجهاز
