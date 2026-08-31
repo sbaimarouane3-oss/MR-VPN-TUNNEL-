@@ -742,6 +742,15 @@ class SshVpnService : VpnService() {
                     }
                 } else {
                     consecutiveFailures++
+                    // مهم: قبل كان هاد الفرع صامت كليا (بلا أي سطر فاللوگ)
+                    // - المستخدم كيبقى شايف "Connected" بلا ما يعرف
+                    // علاش الإنترنت ماخدامش. نسجلو تحذير وحد فقط (ماشي
+                    // كل مرة) ملي أول ping يفشل، باش يبين فاللوگ أن
+                    // المشكل فالتوجيه/forwarding عبر السيرفر، ماشي
+                    // اتصال SSH بذاتو (لي مازال "Connected").
+                    if (consecutiveFailures == 1) {
+                        log("WARN: Ping Failed (tunnel connected but forwarding may be restricted by the server).")
+                    }
                     // Second, independent check for "no real network" beyond
                     // the NetworkCallback: some OEM network stacks are slow
                     // or unreliable about delivering onLost, which would

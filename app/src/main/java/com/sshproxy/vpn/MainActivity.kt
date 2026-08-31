@@ -801,8 +801,14 @@ class MainActivity : AppCompatActivity() {
 
     fun onLogFragmentReady(fragment: LogFragment) {
         logFragment = fragment
+        // قراءة طازجة من LogManager دايما، ماشي غير lastLogContent (كاش
+        // فالذاكرة) - إلا كان lastLogContent مازال "" (Activity تعاود
+        // تصاوب من جديد بعد ما الاتصال خلاص وصل، أو تبويب LOG تفتح قبل
+        // ما توصل أي broadcast)، كان تبويب LOG كيبان فارغ رغم أن الاتصال
+        // ناجح ومسجل كامل فـLogManager (الملف/التخزين المحفوظ).
         fragment.txtLog.text = LogManager.formatForUi(lastLogContent)
         fragment.logScroll.post { fragment.logScroll.fullScroll(View.FOCUS_DOWN) }
+        lifecycleScope.launch { refreshLogIfChanged() }
     }
 
     fun onConfigFragmentReady(fragment: ConfigFragment) {
@@ -2453,8 +2459,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun tryConnect() {
+        // مسح فوري ديال الواجهة غير (تجربة استخدام: اللوگ يبان فارغ
+        // فورا ملي تدوس Connect) - المسح الحقيقي ديال الملف كيوقع دابا
+        // من جوا SshVpnService نفسو (نفس الـprocess لي كيكتب فيه)، باش
+        // نتفاديو race بين process الواجهة وprocess الخدمة.
         logFragment?.txtLog?.text = ""
-        LogManager.clear(applicationContext)
         lastLogContent = ""
 
         if (activeImportedConfig == null && activeXrayConfig == null) {

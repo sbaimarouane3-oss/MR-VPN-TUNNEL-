@@ -32,6 +32,7 @@ class MiniSocks5Server(
     @Volatile private var running = false
     private var serverSocket: ServerSocket? = null
     private val pool = Executors.newCachedThreadPool()
+    private val forwardFailCount = java.util.concurrent.atomic.AtomicInteger(0)
 
     /** True only while the accept loop is alive AND the bound socket is still open - used by the connection monitor. */
     fun isRunning(): Boolean = running && serverSocket?.isClosed == false
@@ -116,7 +117,28 @@ class MiniSocks5Server(
             channel = session.openChannel("direct-tcpip") as ChannelDirectTCPIP
             channel.setHost(targetHost)
             channel.setPort(targetPort)
-            channel.connect(10000)
+            try {
+                channel.connect(10000)
+            } catch (e: Exception) {
+                // مهم: خاصنا نبعتو رد فشل SOCKS5 صريح هنا (ماشي نسكتو)
+                // - بلا هادشي، العميل (hev-socks5-tunnel/المتصفح) كيبقى
+                // معلق كيستنى جواب ماغاديش يجي (بحال DNS_PROBE_STARTED
+                // بلا نهاية فالمتصفح)، بدل ما يفشل بسرعة برسالة واضحة.
+                // هادشي وارد بزاف مع سيرفرات كتقيد الـforwarding نحو
+                // بعض الوجهات (بحال DNS servers) بحال ماكانش خدام مع
+                // الداتا العادية.
+                //
+                // تسجيل محدود (أول 5 مرات غير) باش يبين للمستخدم علاش
+                // "متصل" ولكن الإنترنت ماخدامش - بلا ما نغرقو اللوگ إلا
+                // كانت بزاف الاتصالات كتفشل بسرعة (بحال إعلانات محجوبة
+                // أو بورتات مرفوضة، شي عادي فأي تصفح).
+                if (forwardFailCount.incrementAndGet() <= 5) {
+                    onLog("WARN: Forwarding to $targetHost:$targetPort refused by server (${e.javaClass.simpleName}: ${e.message}).")
+                }
+                sendReply(output, 0x05) // Connection refused
+                client.close()
+                return
+            }
 
             sendReply(output, 0x00) // success
 
