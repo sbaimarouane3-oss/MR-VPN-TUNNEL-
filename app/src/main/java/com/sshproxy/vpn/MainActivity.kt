@@ -1685,15 +1685,28 @@ class MainActivity : AppCompatActivity() {
         f.proxySection.visibility = if (opt.useProxy && !opt.isV2Ray && !opt.isShadowsocks && !opt.isMrUdp) View.VISIBLE else View.GONE
         f.v2raySection.visibility = if (opt.isV2Ray) View.VISIBLE else View.GONE
         f.shadowsocksSection.visibility = if (opt.isShadowsocks || opt.isMrUdp) View.VISIBLE else View.GONE
+        // edtSsMethod is reused for Shadowsocks Method and MR-UDP Username.
+        // Walk up the view tree instead of assuming the direct parent is the
+        // TextInputLayout; this keeps the label correct even if the XML
+        // hierarchy changes (e.g. an intermediate container is introduced).
+        fun methodInputLayout(): com.google.android.material.textfield.TextInputLayout? {
+            var parent = f.edtSsMethod.parent
+            while (parent is View) {
+                if (parent is com.google.android.material.textfield.TextInputLayout) return parent
+                parent = parent.parent
+            }
+            return null
+        }
+
+        val methodLayout = methodInputLayout()
         if (opt.isMrUdp) {
-            (f.edtSsMethod.parent as? com.google.android.material.textfield.TextInputLayout)?.hint = "Username"
-            (f.edtSsMethod.parent as? com.google.android.material.textfield.TextInputLayout)?.helperText = "VPS MR-UDP username"
-            (f.edtSsPassword.parent as? com.google.android.material.textfield.TextInputLayout)?.hint = "Password"
+            methodLayout?.hint = "Username"
+            methodLayout?.helperText = "VPS MR-UDP username"
             f.chkSsUdp.text = "UDP transport"
             f.chkSsUdp.isChecked = true
         } else if (opt.isShadowsocks) {
-            (f.edtSsMethod.parent as? com.google.android.material.textfield.TextInputLayout)?.hint = "Method"
-            (f.edtSsMethod.parent as? com.google.android.material.textfield.TextInputLayout)?.helperText = "e.g. aes-256-gcm"
+            methodLayout?.hint = "Method"
+            methodLayout?.helperText = "e.g. aes-256-gcm"
             f.chkSsUdp.text = "UDP"
         }
     }
