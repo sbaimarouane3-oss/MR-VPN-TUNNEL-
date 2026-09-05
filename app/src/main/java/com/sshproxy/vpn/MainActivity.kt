@@ -70,7 +70,7 @@ import java.io.File
  * Remote Proxy). isXtra كيوجه startVpnService لمسار Xray (VLESS)
  * اليدوي بدل المسار العادي ديال SSH.
  */
-private data class ProtocolOption(
+data class ProtocolOption(
     val label: String,
     val usePayload: Boolean,
     val useSsl: Boolean,
@@ -166,7 +166,7 @@ private val DEFAULT_PROTOCOL = PROTOCOL_OPTIONS[0]
  * - SAVED_CONFIG: جاي من تشغيل ملف .ml محفوظ من CONFIG tab (File/
  *   Protocol/Server/Port فقط - بلا "Config imported" وبلا زر الحذف).
  */
-private enum class ConfigSource { NONE, IMPORTED, SAVED_CONFIG }
+enum class ConfigSource { NONE, IMPORTED, SAVED_CONFIG }
 
 class MainActivity : AppCompatActivity() {
 
