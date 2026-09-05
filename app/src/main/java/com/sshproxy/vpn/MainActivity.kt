@@ -1692,7 +1692,7 @@ class MainActivity : AppCompatActivity() {
         fun methodInputLayout(): com.google.android.material.textfield.TextInputLayout? {
             var current: View? = f.edtSsMethod
             while (current != null) {
-                val parentView: ViewParent? = current.parent
+                val parentView: android.view.ViewParent? = current.parent
                 if (parentView is com.google.android.material.textfield.TextInputLayout) {
                     return parentView
                 }
