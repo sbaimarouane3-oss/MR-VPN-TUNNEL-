@@ -1690,10 +1690,13 @@ class MainActivity : AppCompatActivity() {
         // TextInputLayout; this keeps the label correct even if the XML
         // hierarchy changes (e.g. an intermediate container is introduced).
         fun methodInputLayout(): com.google.android.material.textfield.TextInputLayout? {
-            var parent = f.edtSsMethod.parent
-            while (parent is View) {
-                if (parent is com.google.android.material.textfield.TextInputLayout) return parent
-                parent = parent.parent
+            var current: View? = f.edtSsMethod
+            while (current != null) {
+                val parentView: ViewParent? = current.parent
+                if (parentView is com.google.android.material.textfield.TextInputLayout) {
+                    return parentView
+                }
+                current = parentView as? View
             }
             return null
         }
