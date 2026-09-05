@@ -83,6 +83,7 @@ class SshVpnService : VpnService() {
         const val EXTRA_MODE = "mode"
         const val MODE_SSH = "SSH"
         const val MODE_XRAY = "XRAY"
+        const val MODE_MRUDP = "MRUDP"
         // JSON ديال ParsedProxyConfig.toJson() - مبني من طرف MainActivity/
         // الاستيراد قبل ما يبدا الـservice.
         const val EXTRA_XRAY_CONFIG = "xrayParsedConfigJson"
@@ -159,6 +160,11 @@ class SshVpnService : VpnService() {
     // نوع الاتصال الحالي - SSH (الافتراضي، السلوك القديم بحالو) أو XRAY.
     @Volatile private var mode: String = MODE_SSH
     private var lastXrayParsedJson: String = ""
+    private var mrUdpClient: MrUdpClient? = null
+    private var lastMrUdpHost = ""
+    private var lastMrUdpPort = 4433
+    private var lastMrUdpUser = ""
+    private var lastMrUdpPass = ""
 
     // تاگ الجلسة الحالية (SSH-DIRECT / SSH-PROXY / SSH-PAYLOAD /
     // SSH-PROXY-PAYLOAD / SSH-TLS-PAYLOAD... / XRAY) - كيتحدد مرة وحدة فـ
@@ -344,6 +350,44 @@ class SshVpnService : VpnService() {
 
         mode = intent?.getStringExtra(EXTRA_MODE) ?: MODE_SSH
 
+        // ===== MR-UDP path - custom encrypted UDP transport =====
+        if (mode == MODE_MRUDP) {
+            val mrHost = intent?.getStringExtra("host") ?: return START_NOT_STICKY
+            val mrPort = intent.getIntExtra("port", 4433)
+            val mrUser = intent?.getStringExtra("user") ?: ""
+            val mrPass = intent?.getStringExtra("pass") ?: ""
+            lastMrUdpHost = mrHost; lastMrUdpPort = mrPort; lastMrUdpUser = mrUser; lastMrUdpPass = mrPass
+            logTag = "MR-UDP"
+            log("Starting Service...")
+            broadcastStatus(STATE_CONNECTING)
+            try { startForegroundNotif() } catch (e: Throwable) { log("ERROR: ${e.javaClass.simpleName}: ${realDetail(e)}"); stopSelf(); return START_NOT_STICKY }
+            scope.launch {
+                var attempt = 0
+                while (isActive && isSessionCurrent(connectEpoch)) {
+                    try {
+                        ensureSessionCurrent(connectEpoch)
+                        log("Preparing VPN Engine...")
+                        if (!ensureNativeLoaded(applicationContext)) {
+                            log("ERROR: Native Library Load Failed. (${nativeLoadError ?: "unknown"})")
+                            broadcastStatus(STATE_FAILED); stopVpn(); return@launch
+                        }
+                        connectMrUdp(mrHost, mrPort, mrUser, mrPass, connectEpoch)
+                        break
+                    } catch (e: Throwable) {
+                        if (!isSessionCurrent(connectEpoch)) return@launch
+                        log("MR-UDP: ${classifyConnectError(e)}")
+                        cleanupResources()
+                        if (stopRequested) { stopVpn(); return@launch }
+                        attempt++
+                        if (attempt >= 6) { log("Waiting User Action..."); stopVpn(STATE_WAITING_USER_ACTION); return@launch }
+                        val waitMs = backoffDelayMs(attempt - 1)
+                        log("Retrying MR-UDP (attempt $attempt) in ${waitMs} ms...")
+                        delay(waitMs)
+                    }
+                }
+            }
+            return START_STICKY
+        }
         // ===== V2Ray / Xray path - مستقل كامل عن كود SSH تحت =====
         if (mode == MODE_XRAY) {
             val parsedJson = intent?.getStringExtra(EXTRA_XRAY_CONFIG)
@@ -782,6 +826,55 @@ class SshVpnService : VpnService() {
         }
     }
 
+    private suspend fun connectMrUdp(host: String, port: Int, user: String, pass: String, epoch: Long) {
+        ensureSessionCurrent(epoch)
+        log("Protocol: MR-UDP")
+        log("Resolving Server...")
+        val client = MrUdpClient(host, port, user, pass, { msg -> log(msg) }, socksPort)
+        try {
+            val local = client.start()
+            ensureSessionCurrent(epoch)
+            mrUdpClient = client
+            socksPort = local
+            backendProtocolName = "MR-UDP SOCKS5"
+            log("MR-UDP transport ready.")
+
+            log("Creating VPN Interface...")
+            val builder = Builder()
+                .setSession("MR-UDP")
+                .addAddress("10.0.0.2", 32)
+                .addRoute("0.0.0.0", 0)
+                .addDnsServer("8.8.8.8")
+                .addDnsServer("1.1.1.1")
+                .addDnsServer("9.9.9.9")
+                .addDnsServer("8.8.4.4")
+                .setMtu(1500)
+                .setBlocking(true)
+            try { builder.addDisallowedApplication(packageName) } catch (_: Exception) {}
+            tunFd = builder.establish() ?: throw IllegalStateException("VPN Interface establish() returned null")
+            val fd = tunFd!!.fd
+            vpnActive = true; networkAvailable = true
+
+            scope.launch(Dispatchers.IO) {
+                var firstRun = true
+                while (vpnActive && sessionEpoch.get() == epoch && !stopRequested) {
+                    val rc = nativeStartTunnel(fd, "127.0.0.1", socksPort, 1500, "udp", "127.0.0.1", 0)
+                    if (!vpnActive) break
+                    if (!firstRun || rc != 0) log("ERROR: Native Tunnel Failed (rc=$rc).")
+                    firstRun = false
+                    delay(500)
+                }
+            }
+            log("Tunnel Started Successfully.")
+            ensureSessionCurrent(epoch)
+            log("Connection Established.")
+            broadcastStatus(STATE_READY, epoch)
+        } catch (t: Throwable) {
+            try { client.close() } catch (_: Throwable) {}
+            throw t
+        }
+    }
+
     /**
      * نفس دور connect() بالضبط لكن بـXray-core بدل JSch/MiniSocks5Server.
      * TUN interface وnativeStartTunnel كيبقاو بحالهم بلا تبديل - Xray غير
@@ -1098,6 +1191,10 @@ class SshVpnService : VpnService() {
      * VPN icon during a reconnect.
      */
     private suspend fun smartReconnect(reason: String) {
+        if (mode == MODE_MRUDP) {
+            smartReconnectMrUdp(reason)
+            return
+        }
         if (mode == MODE_XRAY) {
             smartReconnectXray(reason)
             return
@@ -1243,6 +1340,29 @@ class SshVpnService : VpnService() {
      * جديد بنفس الكونفيغ (lastXrayParsedJson) على نفس socksPort - TUN
      * interface وnativeStartTunnel بلا مساس، نفس مبدأ smartReconnect() ديال SSH.
      */
+    private suspend fun smartReconnectMrUdp(reason: String) {
+        if (!vpnActive || stopRequested || reconnecting) return
+        reconnecting = true
+        val myEpoch = sessionEpoch.get()
+        broadcastStatus(STATE_RECONNECTING, myEpoch)
+        log("Reconnecting MR-UDP...")
+        try {
+            try { mrUdpClient?.close() } catch (_: Throwable) {}
+            mrUdpClient = null
+            val client = MrUdpClient(lastMrUdpHost, lastMrUdpPort, lastMrUdpUser, lastMrUdpPass, { msg -> log(msg) }, socksPort)
+            val local = client.start()
+            if (!isSessionCurrent(myEpoch)) { client.close(); return }
+            mrUdpClient = client
+            if (local != socksPort) throw IllegalStateException("MR-UDP local SOCKS port changed")
+            backendProtocolName = "MR-UDP SOCKS5"
+            log("MR-UDP transport ready.")
+            broadcastStatus(STATE_READY, myEpoch)
+        } catch (e: Throwable) {
+            log("ERROR: MR-UDP reconnect failed: ${e.javaClass.simpleName}.")
+            broadcastStatus(STATE_WAITING_NETWORK, myEpoch)
+        } finally { reconnecting = false }
+    }
+
     private suspend fun smartReconnectXray(reason: String) {
         if (!vpnActive || stopRequested) return
         if (autoReconnectSuspended) return
@@ -1530,12 +1650,14 @@ class SshVpnService : VpnService() {
         vpnActive = false
         try { if (nativeLoaded) nativeStopTunnel() } catch (_: Throwable) { }
         try { socksServer?.stop() } catch (_: Throwable) { }
+        try { mrUdpClient?.close() } catch (_: Throwable) { }
         try { session?.disconnect() } catch (_: Throwable) { }
         try { XrayCoreManager.stop() } catch (_: Throwable) { }
         try { UnifiedProxySharingManager.stop() } catch (_: Throwable) { }
         stopSpeedMonitor()
         try { tunFd?.close() } catch (_: Throwable) { }
         socksServer = null
+        mrUdpClient = null
         session = null
         tunFd = null
         log("Cleanup Completed.")

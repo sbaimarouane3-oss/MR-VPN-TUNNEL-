@@ -80,6 +80,8 @@ private data class ProtocolOption(
     val isV2Ray: Boolean = false,
     // Shadowsocks: كيبين حقول Server/Port/Method/Password/UDP بدل حقول SSH.
     val isShadowsocks: Boolean = false,
+    // MR-UDP: custom encrypted UDP tunnel to the project VPS.
+    val isMrUdp: Boolean = false,
     // وصف قصير كيبان تحت الاسم فـ"Choose Protocol" dialog (UI فقط، ماعندوش
     // تأثير على منطق الاتصال).
     val description: String = "",
@@ -146,6 +148,10 @@ private val PROTOCOL_OPTIONS = listOf(
     ProtocolOption(
         "Shadowsocks", usePayload = false, useSsl = false, useProxy = false, isShadowsocks = true,
         description = "Secure SOCKS5 proxy", iconRes = R.drawable.ic_protocol_globe
+    ),
+    ProtocolOption(
+        "MR-UDP", usePayload = false, useSsl = false, useProxy = false, isMrUdp = true,
+        description = "Private encrypted UDP tunnel", iconRes = R.drawable.ic_protocol_bolt
     )
 )
 
@@ -1527,6 +1533,18 @@ class MainActivity : AppCompatActivity() {
                 storeXrayConfigSilently(cfg)
                 true
             }
+            "MR-UDP" -> {
+                val server = (fields["ssServer"] as? String)?.trim().orEmpty()
+                val port = fields["ssPort"]?.toString()?.trim()?.toIntOrNull() ?: 0
+                val user = (fields["ssMethod"] as? String)?.trim().orEmpty()
+                val password = (fields["ssPassword"] as? String).orEmpty()
+                if (server.isEmpty() || port !in 1..65535 || user.isEmpty() || password.length < 8) {
+                    Toast.makeText(this, "Invalid config: missing MR-UDP fields.", Toast.LENGTH_SHORT).show()
+                    return false
+                }
+                activeFieldsPrefs().edit().putString("ssServer", server).putString("ssPort", port.toString()).putString("ssMethod", user).putString("ssPassword", password).putBoolean("ssUdp", true).apply()
+                true
+            }
             "Shadowsocks" -> {
                 val server = (fields["ssServer"] as? String)?.trim().orEmpty()
                 val port = fields["ssPort"]?.toString()?.trim()?.toIntOrNull() ?: 0
@@ -1660,13 +1678,24 @@ class MainActivity : AppCompatActivity() {
      * shadowsocksSection).
      */
     private fun applyProtocolFieldVisibility(f: SshFragment, opt: ProtocolOption) {
-        f.sshCoreFieldsSection.visibility = if (opt.isV2Ray || opt.isShadowsocks) View.GONE else View.VISIBLE
-        f.udpgwSection.visibility = if (opt.isV2Ray || opt.isShadowsocks) View.GONE else View.VISIBLE
-        f.sniSection.visibility = if (opt.useSsl && !opt.isV2Ray && !opt.isShadowsocks) View.VISIBLE else View.GONE
-        f.payloadSection.visibility = if (opt.usePayload && !opt.isV2Ray && !opt.isShadowsocks) View.VISIBLE else View.GONE
-        f.proxySection.visibility = if (opt.useProxy && !opt.isV2Ray && !opt.isShadowsocks) View.VISIBLE else View.GONE
+        f.sshCoreFieldsSection.visibility = if (opt.isV2Ray || opt.isShadowsocks || opt.isMrUdp) View.GONE else View.VISIBLE
+        f.udpgwSection.visibility = if (opt.isV2Ray || opt.isShadowsocks || opt.isMrUdp) View.GONE else View.VISIBLE
+        f.sniSection.visibility = if (opt.useSsl && !opt.isV2Ray && !opt.isShadowsocks && !opt.isMrUdp) View.VISIBLE else View.GONE
+        f.payloadSection.visibility = if (opt.usePayload && !opt.isV2Ray && !opt.isShadowsocks && !opt.isMrUdp) View.VISIBLE else View.GONE
+        f.proxySection.visibility = if (opt.useProxy && !opt.isV2Ray && !opt.isShadowsocks && !opt.isMrUdp) View.VISIBLE else View.GONE
         f.v2raySection.visibility = if (opt.isV2Ray) View.VISIBLE else View.GONE
-        f.shadowsocksSection.visibility = if (opt.isShadowsocks) View.VISIBLE else View.GONE
+        f.shadowsocksSection.visibility = if (opt.isShadowsocks || opt.isMrUdp) View.VISIBLE else View.GONE
+        if (opt.isMrUdp) {
+            (f.edtSsMethod.parent as? com.google.android.material.textfield.TextInputLayout)?.hint = "Username"
+            (f.edtSsMethod.parent as? com.google.android.material.textfield.TextInputLayout)?.helperText = "VPS MR-UDP username"
+            (f.edtSsPassword.parent as? com.google.android.material.textfield.TextInputLayout)?.hint = "Password"
+            f.chkSsUdp.text = "UDP transport"
+            f.chkSsUdp.isChecked = true
+        } else if (opt.isShadowsocks) {
+            (f.edtSsMethod.parent as? com.google.android.material.textfield.TextInputLayout)?.hint = "Method"
+            (f.edtSsMethod.parent as? com.google.android.material.textfield.TextInputLayout)?.helperText = "e.g. aes-256-gcm"
+            f.chkSsUdp.text = "UDP"
+        }
     }
 
     private fun wireManualFieldPersistence() {
@@ -2363,7 +2392,7 @@ class MainActivity : AppCompatActivity() {
                         server = if (parsed != null && parsed.address.isNotBlank()) maskForDisplay(parsed.address) else "—"
                         port = if (parsed != null && parsed.port > 0) parsed.port.toString() else "—"
                     }
-                    "Shadowsocks" -> {
+                    "Shadowsocks", "MR-UDP" -> {
                         val host = f.edtSsServer.text?.toString()?.trim().orEmpty()
                         server = if (host.isBlank()) "—" else maskForDisplay(host)
                         port = f.edtSsPort.text?.toString()?.trim()?.ifBlank { "—" } ?: "—"
@@ -2505,6 +2534,18 @@ class MainActivity : AppCompatActivity() {
                         return
                     }
                 }
+                "MR-UDP" -> {
+                    val f = sshFragment
+                    val server = f?.edtSsServer?.text?.toString()?.trim() ?: ""
+                    val port = f?.edtSsPort?.text?.toString()?.trim()?.toIntOrNull()
+                    val user = f?.edtSsMethod?.text?.toString()?.trim() ?: ""
+                    val password = f?.edtSsPassword?.text?.toString() ?: ""
+                    if (server.isEmpty() || port == null || port !in 1..65535 || user.isEmpty() || password.length < 8) {
+                        appendLog("ERROR: Invalid Configuration.")
+                        showInvalidCodeDialog("MR-UDP requires Server, Port, Username and a password of at least 8 characters.")
+                        return
+                    }
+                }
                 else -> {
                     val hostPort = sshFragment?.edtHost?.text?.toString()?.trim() ?: ""
                     if (!hostPort.contains(":")) {
@@ -2629,6 +2670,24 @@ class MainActivity : AppCompatActivity() {
                 intent.putExtra(SshVpnService.EXTRA_MODE, SshVpnService.MODE_XRAY)
                 intent.putExtra(SshVpnService.EXTRA_XRAY_CONFIG, cfg.toJson())
 
+                StateStore.write(applicationContext, SshVpnService.STATE_CONNECTING, requestId)
+                startService(intent)
+                connecting = true
+                connected = false
+                reconnectingUi = false
+                failedUi = false
+                applyConnectButtonState()
+                return
+            } else if (manualProtocol == "MR-UDP") {
+                val server = f?.edtSsServer?.text?.toString()?.trim() ?: ""
+                val port = f?.edtSsPort?.text?.toString()?.trim()?.toIntOrNull() ?: 0
+                val user = f?.edtSsMethod?.text?.toString()?.trim() ?: ""
+                val password = f?.edtSsPassword?.text?.toString() ?: ""
+                intent.putExtra(SshVpnService.EXTRA_MODE, SshVpnService.MODE_MRUDP)
+                intent.putExtra("host", server)
+                intent.putExtra("port", port)
+                intent.putExtra("user", user)
+                intent.putExtra("pass", password)
                 StateStore.write(applicationContext, SshVpnService.STATE_CONNECTING, requestId)
                 startService(intent)
                 connecting = true
