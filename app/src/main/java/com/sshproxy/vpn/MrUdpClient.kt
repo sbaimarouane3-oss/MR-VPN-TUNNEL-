@@ -58,6 +58,7 @@ class MrUdpClient(
     private val pool = Executors.newCachedThreadPool()
     private val streams = ConcurrentHashMap<Int, MrStream>()
     private val udpWaiters = ConcurrentHashMap<Int, (ByteArray) -> Unit>()
+    private val udpLastSeen = ConcurrentHashMap<Int, Long>()
     private val lock = Any()
     private val key = SecretKeySpec(sha256(password.toByteArray(Charsets.UTF_8)), "AES")
     private var nextStreamId = random.nextInt().let { if (it == 0) 1 else it }
@@ -194,8 +195,23 @@ class MrUdpClient(
     private fun sendUdp(host: String, port: Int, data: ByteArray, callback: (ByteArray)->Unit) {
         val id = synchronized(lock) { nextStreamId += 2; nextStreamId }
         udpWaiters[id] = callback
+        udpLastSeen[id] = System.currentTimeMillis()
         val b = ByteArrayOutputStreamCompat(); b.writeUtf8(host); b.writeShort(port); b.write(data)
         send(UDP, id, 0, b.toByteArray())
+        pool.execute {
+            try {
+                while (running) {
+                    Thread.sleep(30_000)
+                    val last = udpLastSeen[id] ?: break
+                    if (System.currentTimeMillis() - last >= 30_000) {
+                        udpWaiters.remove(id)
+                        udpLastSeen.remove(id)
+                        break
+                    }
+                }
+            } catch (_: InterruptedException) {
+            }
+        }
     }
 
     private fun pipeSocketToStream(input: java.io.InputStream, s: MrStream) {
@@ -221,7 +237,10 @@ class MrUdpClient(
                     DATA -> { streams[id]?.onData(seq,payload); send(ACK,id,seq,ByteArray(0)) }
                     ACK -> streams[id]?.onAck(seq)
                     CLOSE -> streams.remove(id)?.remoteClose()
-                    UDP -> { udpWaiters.remove(id)?.invoke(payload) }
+                    UDP -> {
+                        udpLastSeen[id] = System.currentTimeMillis()
+                        udpWaiters[id]?.invoke(payload)
+                    }
                     PING -> send(PING,0,seq,ByteArray(0))
                 }
             } catch (_:SocketTimeoutException) {} catch (_:Throwable) { if(running) onLog("WARN: MR-UDP transport stopped."); break }
@@ -244,7 +263,7 @@ class MrUdpClient(
     override fun close() {
         running=false; authenticated=false
         try{socksServer?.close()}catch(_:Throwable){}
-        streams.values.forEach{it.close()}; streams.clear(); udpWaiters.clear()
+        streams.values.forEach{it.close()}; streams.clear(); udpWaiters.clear(); udpLastSeen.clear()
         try{socket.close()}catch(_:Throwable){}
         pool.shutdownNow()
     }
