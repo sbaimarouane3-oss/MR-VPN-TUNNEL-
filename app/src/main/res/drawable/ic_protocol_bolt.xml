@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- أيقونة برق (XTRA - High performance protocol) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@color/accent_green"
+        android:pathData="M13,2L4.09,12.51C3.71,12.96 4.03,13.65 4.62,13.65H11L10,22L18.91,10.99C19.29,10.53 18.96,9.85 18.37,9.85H13L13,2Z" />
+</vector>

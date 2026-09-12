@@ -1,0 +1,761 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/screen_bg"
+    android:clipToPadding="false"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- ============ Status Card ============ -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:cardBackgroundColor="@color/screen_surface"
+            app:cardCornerRadius="20dp"
+            app:cardElevation="0dp"
+            app:strokeColor="@color/screen_stroke"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center_horizontal"
+                android:padding="26dp">
+
+                <!-- زر الاتصال: دائري، بلا نص/عنوان فوقو ("VPN CONNECTION"
+                     و"DISCONNECTED" كانو هنا من قبل - تحيدو). حالة الاتصال
+                     بانة غير جوا الكارد اللي تحت (Status row)، وفـ نص
+                     START/STOP جوا الدائرة نفسها. -->
+                <FrameLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content">
+
+                    <!-- حلقة نبض خفيفة (Connecting/Reconnecting) - مخبية
+                         بالـdefault، كيتحكم فيها MainActivity عبر animator
+                         واحد بلا ما يعاود يبدا كل مرة (شوف updateConnectButtonVisual). -->
+                    <View
+                        android:id="@+id/viewConnectPulseRing"
+                        android:layout_width="150dp"
+                        android:layout_height="150dp"
+                        android:layout_gravity="center"
+                        android:background="@drawable/shape_pulse_ring"
+                        android:visibility="invisible" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnConnect"
+                        android:layout_width="140dp"
+                        android:layout_height="140dp"
+                        android:layout_gravity="center"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:insetLeft="0dp"
+                        android:insetRight="0dp"
+                        android:backgroundTint="@color/state_idle"
+                        android:text="START"
+                        android:textColor="@color/text_primary"
+                        android:textSize="15sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.06"
+                        app:cornerRadius="70dp"
+                        app:rippleColor="#33FFFFFF"
+                        android:contentDescription="Connect" />
+                </FrameLayout>
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ============ Connection Details Card ============ -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            app:cardBackgroundColor="@color/screen_surface"
+            app:cardCornerRadius="18dp"
+            app:cardElevation="0dp"
+            app:strokeColor="@color/screen_stroke"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="18dp">
+
+                <!-- Server -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Server"
+                        android:textColor="@color/text_muted"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:id="@+id/txtServerValue"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:gravity="end"
+                        android:text="—"
+                        android:textColor="@color/text_primary"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:singleLine="true"
+                        android:ellipsize="end" />
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginTop="12dp"
+                    android:layout_marginBottom="12dp"
+                    android:background="@color/screen_stroke" />
+
+                <!-- Protocol - قابلة للضغط دابا: كتفتح مختار البروتوكول
+                     (SSH أو VLESS/VMess/Trojan/Shadowsocks/Xray JSON). -->
+                <LinearLayout
+                    android:id="@+id/rowProtocol"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="2dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Protocol"
+                        android:textColor="@color/text_muted"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:id="@+id/txtProtocolValue"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:gravity="end"
+                        android:text="—"
+                        android:textColor="@color/text_primary"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:singleLine="true"
+                        android:ellipsize="end"
+                        android:maxWidth="180dp" />
+
+                    <ImageView
+                        android:layout_width="14dp"
+                        android:layout_height="14dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron_right"
+                        app:tint="@color/text_muted"
+                        android:contentDescription="Choose protocol" />
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginTop="12dp"
+                    android:layout_marginBottom="12dp"
+                    android:background="@color/screen_stroke" />
+
+                <!-- Port -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Port"
+                        android:textColor="@color/text_muted"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:id="@+id/txtPortValue"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:gravity="end"
+                        android:text="—"
+                        android:textColor="@color/text_primary"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:singleLine="true"
+                        android:ellipsize="end" />
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginTop="12dp"
+                    android:layout_marginBottom="12dp"
+                    android:background="@color/screen_stroke" />
+
+                <!-- Status -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Status"
+                        android:textColor="@color/text_muted"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:id="@+id/txtStatusCardValue"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:gravity="end"
+                        android:text="Disconnected"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <!-- File: كتبان غير ملي Config محفوظة هي المستعملة حاليا
+                     (SAVED_CONFIG) - بلا علاقة بحالة الاتصال (Connected/
+                     Disconnected). كتخبى بالكامل (Divider + الصف) إلا كان
+                     ماكاينش Config محفوظة مستعملة. شوف updateConnectionSummary()
+                     فـMainActivity. -->
+                <View
+                    android:id="@+id/dividerFile"
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginTop="12dp"
+                    android:layout_marginBottom="12dp"
+                    android:background="@color/screen_stroke"
+                    android:visibility="gone" />
+
+                <LinearLayout
+                    android:id="@+id/rowFile"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="File"
+                        android:textColor="@color/text_muted"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:id="@+id/txtFileValue"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:gravity="end"
+                        android:text="—"
+                        android:textColor="@color/text_primary"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:singleLine="true"
+                        android:ellipsize="end" />
+                </LinearLayout>
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ============ SSH Settings Card ============ -->
+        <!-- عنوان "SSH SETTINGS" تحيد من هنا بطلب المستخدم (كارد الحقول
+             بقات بحالها تحت status مباشرة، فراغ فوقها بلا عنوان). -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            app:cardBackgroundColor="@color/screen_surface"
+            app:cardCornerRadius="18dp"
+            app:cardElevation="0dp"
+            app:strokeColor="@color/screen_stroke"
+            app:strokeWidth="1dp">
+
+            <!-- الحقول اليدوية: كتختفي كاملة إلا كان فيه كونفيغ مستورد نشط -->
+            <LinearLayout
+                android:id="@+id/manualFieldsContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="18dp">
+
+                <!-- سطاط حقول SSH الأساسية (Host/Username/Password) - مجمعين
+                     هنا فـ container واحد باش نقدرو نخبيوهم كلهم دفعة وحدة
+                     مع V2Ray/Shadowsocks بلا ما نمسو أي id قديم. -->
+                <LinearLayout
+                    android:id="@+id/sshCoreFieldsSection"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <!-- ملاحظة إصلاح: TextInputLayout قبل كان فيه hint، وEditText
+                         فالداخل عندو hint خاص بيه هو الآخر - هادشي عمدا مانتصحش
+                         بيه Material Components (كيسبب تداخل/ازدواجية فالـfloating
+                         label). دابا الـhint كاين مرة وحدة غير فـ TextInputLayout،
+                         والمثال (placeholder) تحول لـ helperText صغير تحت الحقل. -->
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/ModernTextInputLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:hint="SSH Host:Port"
+                        app:helperText="e.g. example.com:443"
+                        app:helperTextEnabled="true">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edtHost"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/text_primary"
+                            android:inputType="text" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/ModernTextInputLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:hint="Username">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edtUser"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/text_primary"
+                            android:inputType="text" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/ModernTextInputLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:hint="Password"
+                        app:endIconMode="password_toggle"
+                        app:endIconTint="@color/accent_green">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edtPass"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/text_primary"
+                            android:inputType="text" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+
+                <!-- Use Payload / SSL: بقاو خدامين فالكود (isChecked كيتقرا
+                     منها وقت بناء الاتصال)، غير مخبيين من الواجهة بطلب
+                     المستخدم - دابا كيتعمرو تلقائيا ملي تختار SSH-Payload/
+                     SSH-SSL/SSH-SSL-Payload من مختار البروتوكول (Protocol
+                     row فكارد Connection Details). -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="16dp"
+                    android:visibility="gone">
+
+                    <CheckBox
+                        android:id="@+id/chkUsePayload"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Use Payload"
+                        android:textColor="@color/text_primary"
+                        android:buttonTint="@color/accent_green"
+                        android:checked="true" />
+
+                    <!-- بروتوكول SSH-SSL: كتلف التواصل بـ TLS قبل ما يبدا SSH handshake،
+                         بحال SSL checkbox فـ HTTP Custom / NPV Tunnel. -->
+                    <CheckBox
+                        android:id="@+id/chkUseSsl"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="SSL"
+                        android:textColor="@color/text_primary"
+                        android:buttonTint="@color/accent_green"
+                        android:checked="false" />
+                </LinearLayout>
+
+                <!-- UDPGW: كيمرر ترافيك UDP (بحال مكالمات الصوت/الفيديو) عبر
+                     badvpn-udpgw خدام عالسيرفر البعيد، حيت SSH وSOCKS5 المحلي
+                     عندنا كيدعموا TCP بوحدو. مجمع فـ container باش يتخبى
+                     كاملا مع V2Ray/Shadowsocks (ماشي متعلق بيهم). -->
+                <LinearLayout
+                    android:id="@+id/udpgwSection"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <CheckBox
+                        android:id="@+id/chkUdpgw"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="UDP (UDPGW)"
+                        android:textColor="@color/text_primary"
+                        android:buttonTint="@color/accent_green"
+                        android:checked="false" />
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/ModernTextInputLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:hint="UDPGW Port"
+                        app:helperText="e.g. 7300"
+                        app:helperTextEnabled="true">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edtUdpgwPort"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/text_primary"
+                            android:inputType="number" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+
+                <!-- SNI: تبان غير مع البروتوكولات اللي فيهم TLS (SSH-TLS*, XTRA) -->
+                <LinearLayout
+                    android:id="@+id/sniSection"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/ModernTextInputLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:hint="SNI (SSL only)"
+                        app:helperText="e.g. google.com — leave blank to use host"
+                        app:helperTextEnabled="true">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edtSni"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/text_primary"
+                            android:inputType="text" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+
+                <!-- Payload: تبان غير مع البروتوكولات اللي فيهم Payload -->
+                <LinearLayout
+                    android:id="@+id/payloadSection"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Payload"
+                        android:textColor="@color/text_muted"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.06"
+                        android:layout_marginTop="18dp"
+                        android:layout_marginBottom="8dp" />
+
+                    <FrameLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/shape_config_card_blue">
+
+                        <ScrollView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:maxHeight="180dp"
+                            android:scrollbars="vertical"
+                            android:fillViewport="false">
+
+                            <EditText
+                                android:id="@+id/edtPayload"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:minLines="4"
+                                android:gravity="top|start"
+                                android:padding="14dp"
+                                android:background="@android:color/transparent"
+                                android:fontFamily="monospace"
+                                android:hint="GET / HTTP/1.1[crlf]Host: [host][crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf][crlf]"
+                                android:textColor="@color/text_primary"
+                                android:textColorHint="@color/text_muted"
+                                android:textSize="12sp"
+                                android:inputType="textMultiLine" />
+                        </ScrollView>
+                    </FrameLayout>
+                </LinearLayout>
+
+                <!-- Remote Proxy: تبان غير مع البروتوكولات اللي فيهم Proxy -->
+                <LinearLayout
+                    android:id="@+id/proxySection"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/ModernTextInputLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="16dp"
+                        android:hint="Remote Proxy (ip:port)"
+                        app:helperText="e.g. proxy.host.com:80"
+                        app:helperTextEnabled="true">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edtProxy"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/text_primary"
+                            android:inputType="text" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+
+                <!-- V2Ray/Xray: تبان غير ملي Protocol = V2Ray. حقل JSON
+                     كبير يقبل config كامل (inbounds/outbounds/policy...)،
+                     نفس ستايل كارد Payload لي فوق. -->
+                <LinearLayout
+                    android:id="@+id/v2raySection"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="V2Ray / Xray Config (JSON)"
+                        android:textColor="@color/text_muted"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.06"
+                        android:layout_marginTop="4dp"
+                        android:layout_marginBottom="8dp" />
+
+                    <FrameLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/shape_config_card_blue">
+
+                        <ScrollView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:maxHeight="320dp"
+                            android:scrollbars="vertical"
+                            android:fillViewport="false">
+
+                            <EditText
+                                android:id="@+id/edtV2rayJson"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:minLines="8"
+                                android:gravity="top|start"
+                                android:padding="14dp"
+                                android:background="@android:color/transparent"
+                                android:fontFamily="monospace"
+                                android:hint="{&#10;  &quot;inbounds&quot;: [],&#10;  &quot;outbounds&quot;: [ ... ]&#10;}"
+                                android:textColor="@color/text_primary"
+                                android:textColorHint="@color/text_muted"
+                                android:textSize="12sp"
+                                android:inputType="textMultiLine|textNoSuggestions" />
+                        </ScrollView>
+                    </FrameLayout>
+                </LinearLayout>
+
+                <!-- Shadowsocks: تبان غير ملي Protocol = Shadowsocks. -->
+                <LinearLayout
+                    android:id="@+id/shadowsocksSection"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/ModernTextInputLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:hint="Server"
+                        app:helperText="e.g. example.com"
+                        app:helperTextEnabled="true">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edtSsServer"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/text_primary"
+                            android:inputType="text" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/ModernTextInputLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:hint="Port">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edtSsPort"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/text_primary"
+                            android:inputType="number" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/ModernTextInputLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:hint="Method"
+                        app:helperText="e.g. aes-256-gcm"
+                        app:helperTextEnabled="true">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edtSsMethod"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/text_primary"
+                            android:inputType="text" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/ModernTextInputLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:hint="Password"
+                        app:endIconMode="password_toggle"
+                        app:endIconTint="@color/accent_green">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edtSsPassword"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/text_primary"
+                            android:inputType="text" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <CheckBox
+                        android:id="@+id/chkSsUdp"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="16dp"
+                        android:text="UDP"
+                        android:textColor="@color/text_primary"
+                        android:buttonTint="@color/accent_green"
+                        android:checked="true" />
+                </LinearLayout>
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- زر Add: دابا مكرر مع "Add" لي فالقائمة الجانبية، مخبي هنا
+             بلا ما نحيدو الـ id (باش الكود ديال الكوتلن يبقى خدام بلا
+             تبديل). -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnImportConfig"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="16dp"
+            android:backgroundTint="@color/screen_surface_alt"
+            android:text="Add"
+            android:textColor="@color/text_primary"
+            android:drawableStart="@drawable/ic_add"
+            android:drawableTint="@color/text_primary"
+            android:drawablePadding="8dp"
+            android:gravity="center"
+            app:cornerRadius="16dp"
+            app:strokeColor="@color/screen_stroke"
+            app:strokeWidth="1dp"
+            android:visibility="gone" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnShareLog"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="14dp"
+            android:backgroundTint="@color/screen_surface_alt"
+            android:text="SHARE LOG"
+            android:textColor="@color/text_primary"
+            app:cornerRadius="16dp"
+            app:strokeColor="@color/screen_stroke"
+            app:strokeWidth="1dp"
+            android:visibility="gone" />
+
+        <!-- حالة الكونفيغ المستورد (إلا كان موجود) + زر الاستيراد -->
+        <LinearLayout
+            android:id="@+id/importedStatusContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/shape_config_card_blue"
+            android:padding="16dp"
+            android:layout_marginTop="16dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/txtImportedStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/accent_green"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:text="" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnRemoveImported"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:layout_marginStart="-8dp"
+                android:text="REMOVE IMPORTED CONFIG"
+                android:textColor="@color/state_error"
+                android:textSize="12sp"
+                app:rippleColor="#22FF5459" />
+        </LinearLayout>
+
+        <!-- زر إنشاء كونفيغ .ml جديد - تحول من CONFIG tab لهنا، كيفتح نفس
+             ديالوغ الإنشاء (اسم -> كلمة سر اختيارية) اللي فـConfigFragment. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnNewConfig"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="16dp"
+            android:backgroundTint="@color/screen_blue"
+            android:text="+ NEW CONFIG"
+            android:textColor="#FFFFFF"
+            app:cornerRadius="16dp" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="8dp" />
+
+    </LinearLayout>
+</ScrollView>

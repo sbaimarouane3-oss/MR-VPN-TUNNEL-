@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Adaptive Icon foreground.
+    The artwork is intentionally constrained to 64dp x 64dp and centered
+    inside the 108dp adaptive-icon viewport so Samsung/One UI does not crop it.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:width="64dp"
+        android:height="64dp"
+        android:gravity="center">
+        <bitmap
+            android:src="@drawable/ic_launcher_foreground_img"
+            android:gravity="fill" />
+    </item>
+</layer-list>

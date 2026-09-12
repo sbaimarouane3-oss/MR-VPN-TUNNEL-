@@ -1,0 +1,22 @@
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+        maven { url 'https://jitpack.io' }
+        // libv2ray.aar (Xray-core) - مبني من طرف CI فـ app/libs/, شوف
+        // .github/workflows/build.yml و app/build.gradle
+        flatDir {
+            dirs "${rootDir}/app/libs"
+        }
+    }
+}
+rootProject.name = "SSH-Proxy-Payload"
+include ':app'

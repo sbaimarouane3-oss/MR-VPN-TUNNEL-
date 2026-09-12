@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- خاصة لـSubscriptionManager.getActiveDataSubscriptionId() باش
+         التطبيق يعرف اسم الأوبراتور الصحيح ديال الـSIM اللي فعلا كيدير
+         بيانات الهاتف فهاتف بـ2 SIM (dual-SIM) - بلا هاد الـpermission،
+         الكود كيرجع تلقائيا للطريقة القديمة (SIM الافتراضي فقط). -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"
+        tools:targetApi="34" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- غير للأجهزة القديمة (API 28 وتحت) - كتخدم كونفيغ .ml مباشرة فـ
+         Downloads بلا MediaStore. Android 10+ ماخاصهاش هاد الصلاحية. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
+    <!-- خاصة بـSecurityCheck.isRooted(): بداية Android 11 (API 30)، بلا هاد
+         التصريح، getPackageInfo() على تطبيقات آخرين كترجع دايما "ماكايناش"
+         حتى لو كانو مثبتين فعلاً (package visibility restriction). هاد
+         اللائحة هي بالضبط rootManagerPackages فـSecurityCheck.kt. -->
+    <queries>
+        <package android:name="com.topjohnwu.magisk" />
+        <package android:name="eu.chainfire.supersu" />
+        <package android:name="com.noshufou.android.su" />
+        <package android:name="com.noshufou.android.su.elite" />
+        <package android:name="com.koushikdutta.superuser" />
+        <package android:name="com.thirdparty.superuser" />
+        <package android:name="com.yellowes.su" />
+        <package android:name="com.kingroot.kinguser" />
+        <package android:name="com.kingo.root" />
+        <package android:name="com.smedialink.oneclickroot" />
+        <package android:name="com.zhiqupk.root.global" />
+        <package android:name="com.alephzain.framaroot" />
+        <package android:name="me.weishu.kernelsu" />
+    </queries>
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="MR VPN TUNNEL"
+        android:theme="@style/Theme.SshProxyPayload"
+        android:usesCleartextTraffic="true"
+        tools:targetApi="31">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="MR VPN TUNNEL"
+            android:launchMode="singleTask"
+            android:screenOrientation="portrait"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- كيسمح للتطبيق يبان كخيار "Open with" عند الضغط على ملف .ml
+                 جاي من تلغرام/واتساب/مدير ملفات - سواء وصل كـcontent:// (أغلب
+                 الحالات) أو file://. التوافق كيختلف بحسب التطبيق المرسل حيت
+                 .ml ماشي امتداد مسجل رسميا فـ Android MimeTypeMap. -->
+            <intent-filter android:priority="1000">
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="file" />
+                <data android:scheme="content" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".SshVpnService"
+            android:process=":vpnproc"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="vpn-tunnel-ssh-proxy" />
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+    </application>
+</manifest>

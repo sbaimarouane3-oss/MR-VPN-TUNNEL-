@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/screen_bg"
+    android:clipToPadding="false"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="SAVED CONFIGS"
+            android:textColor="@color/screen_blue"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.08"
+            android:layout_marginBottom="12dp" />
+
+        <TextView
+            android:id="@+id/txtConfigEmpty"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="No saved configs yet. Use the + button in SSH SETTINGS to create one."
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp"
+            android:padding="8dp"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:id="@+id/llConfigList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+    </LinearLayout>
+</ScrollView>

@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.drawerlayout.widget.DrawerLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/drawerLayout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:openDrawer="start">
+
+    <!-- المحتوى الرئيسي (Top bar + Tabs + ViewPager) -->
+    <!-- FIX (توحيد بصري مع الشاشات الزرقاء): screen_bg بدل app_bg القديم. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:background="@color/screen_bg">
+
+        <!-- شريط علوي: زر القائمة (☰) + اسم التطبيق -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@color/screen_bg"
+            android:paddingStart="8dp"
+            android:paddingEnd="16dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp">
+
+            <ImageButton
+                android:id="@+id/btnMenu"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_menu"
+                android:contentDescription="Menu"
+                android:padding="10dp" />
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp"
+                android:text="@string/app_name"
+                android:textColor="@color/text_primary"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.02" />
+
+        </LinearLayout>
+
+        <!-- تبويبات بستايل Segmented Control -->
+        <!-- FIX (توحيد بصري): tabIndicatorColor دابا screen_blue بدل
+             accent_green، باش خط التبويب النشط يطابق باقي الشاشات الزرقاء. -->
+        <com.google.android.material.tabs.TabLayout
+            android:id="@+id/tabLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="8dp"
+            android:background="@drawable/shape_tab_container"
+            android:elevation="0dp"
+            app:tabMode="fixed"
+            app:tabGravity="fill"
+            app:tabIndicatorColor="@color/screen_blue"
+            app:tabIndicatorHeight="3dp"
+            app:tabIndicatorFullWidth="false"
+            app:tabRippleColor="@android:color/transparent"
+            app:tabSelectedTextColor="@color/text_primary"
+            app:tabTextColor="@color/text_muted"
+            app:tabTextAppearance="@style/TextAppearance.MaterialComponents.Button"
+            app:tabPaddingTop="10dp"
+            app:tabPaddingBottom="10dp" />
+
+        <androidx.viewpager2.widget.ViewPager2
+            android:id="@+id/viewPager"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="@color/screen_bg" />
+
+    </LinearLayout>
+
+    <!-- القائمة الجانبية -->
+    <!-- FIX (Dark Neon VPN Style - UI فقط): itemBackground جديد
+         (bg_nav_item_card) كيعطي شكل "كارد" لكل عنصر بحال التصميم
+         المرجعي، itemIconSize كبرات لـ40dp باش تدي البادجات الدائرية
+         الجداد (ic_nav_badge_*) بلا ما تتقص، والمسافات (insets/padding)
+         تزادت شوية باش الكاردات تبان مرتاحة. المنطق (setNavigationItemSelectedListener
+         فـMainActivity.setupDrawer()) ماتبدلش خالص. -->
+    <com.google.android.material.navigation.NavigationView
+        android:id="@+id/navigationView"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:layout_gravity="start"
+        android:background="@drawable/bg_drawer_background"
+        app:headerLayout="@layout/nav_header"
+        app:itemIconTint="@null"
+        app:itemIconSize="40dp"
+        app:itemTextColor="@color/drawer_text"
+        app:itemTextAppearance="@style/TextAppearance.MaterialComponents.Subtitle2"
+        app:itemIconPadding="14dp"
+        app:itemRippleColor="@color/drawer_item_ripple"
+        app:itemBackground="@drawable/bg_nav_item_card"
+        app:itemShapeAppearanceOverlay="@style/ShapeAppearanceOverlay.NavItem"
+        app:itemShapeInsetStart="14dp"
+        app:itemShapeInsetEnd="14dp"
+        app:itemShapeInsetTop="5dp"
+        app:itemShapeInsetBottom="5dp"
+        app:itemHorizontalPadding="14dp"
+        app:itemVerticalPadding="9dp"
+        app:menu="@menu/drawer_menu" />
+
+</androidx.drawerlayout.widget.DrawerLayout>

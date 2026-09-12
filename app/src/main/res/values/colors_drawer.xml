@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Drawer-only palette: dark glass + neon purple, while the logo keeps its original blue/cyan neon. -->
+    <color name="drawer_background">#070511</color>
+    <color name="drawer_text">#FFFFFFFF</color>
+    <color name="drawer_accent">#B45CFF</color>
+    <color name="drawer_neon_blue">#3AA8FFFF</color>
+    <color name="drawer_neon_blue_soft">#263AA8FF</color>
+    <color name="drawer_neon_blue_glow_1">#403AA8FF</color>
+    <color name="drawer_neon_blue_glow_2">#203AA8FF</color>
+    <color name="drawer_neon_blue_glow_3">#0D3AA8FF</color>
+
+    <color name="drawer_neon_purple">#9B4DFFFF</color>
+    <color name="drawer_neon_purple_bright">#C45CFFFF</color>
+    <color name="drawer_neon_purple_soft">#2D9B4DFF</color>
+    <color name="drawer_neon_purple_glow_1">#3C9B4DFF</color>
+    <color name="drawer_neon_purple_glow_2">#249B4DFF</color>
+    <color name="drawer_neon_purple_glow_3">#129B4DFF</color>
+
+    <!-- Glass cards -->
+    <color name="drawer_card_bg">#151022</color>
+    <color name="drawer_card_bg_end">#0D0918</color>
+    <color name="drawer_card_stroke">#5A2A80</color>
+    <color name="drawer_card_stroke_bright">#A64DFFFF</color>
+    <color name="drawer_card_pressed">#24123A</color>
+
+    <color name="drawer_badge_blue_bg">#263AA8FF</color>
+    <color name="drawer_badge_blue_stroke">#663AA8FF</color>
+    <color name="drawer_badge_red_bg">#26FF304A</color>
+    <color name="drawer_badge_red_stroke">#66FF3B55</color>
+
+    <color name="drawer_subtitle">#B6AFC4</color>
+</resources>
