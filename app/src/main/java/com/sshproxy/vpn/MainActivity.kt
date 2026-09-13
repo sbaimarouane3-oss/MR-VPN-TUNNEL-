@@ -157,6 +157,11 @@ private val PROTOCOL_OPTIONS = listOf(
 
 private val DEFAULT_PROTOCOL = PROTOCOL_OPTIONS[0]
 
+// MR-UDP: fixed internal username - the UI only ever exposes Server/Port/
+// Password for this protocol, matching the VPS side (mr_udp_server.py is
+// started with MR_USER=mrudp for every account).
+private const val MR_UDP_USERNAME = "mrudp"
+
 /**
  * مصدر الكونفيغ "المخفي" النشط حاليا (activeImportedConfig/activeXrayConfig) -
  * باش updateImportUiState() يقدر يفرق بين حالتين كيستعملو نفس التخزين
@@ -1536,13 +1541,12 @@ class MainActivity : AppCompatActivity() {
             "MR-UDP" -> {
                 val server = (fields["ssServer"] as? String)?.trim().orEmpty()
                 val port = fields["ssPort"]?.toString()?.trim()?.toIntOrNull() ?: 0
-                val user = (fields["ssMethod"] as? String)?.trim().orEmpty()
                 val password = (fields["ssPassword"] as? String).orEmpty()
-                if (server.isEmpty() || port !in 1..65535 || user.isEmpty() || password.length < 8) {
+                if (server.isEmpty() || port !in 1..65535 || password.length < 8) {
                     Toast.makeText(this, "Invalid config: missing MR-UDP fields.", Toast.LENGTH_SHORT).show()
                     return false
                 }
-                activeFieldsPrefs().edit().putString("ssServer", server).putString("ssPort", port.toString()).putString("ssMethod", user).putString("ssPassword", password).putBoolean("ssUdp", true).apply()
+                activeFieldsPrefs().edit().putString("ssServer", server).putString("ssPort", port.toString()).putString("ssMethod", MR_UDP_USERNAME).putString("ssPassword", password).putBoolean("ssUdp", true).apply()
                 true
             }
             "Shadowsocks" -> {
@@ -1686,12 +1690,14 @@ class MainActivity : AppCompatActivity() {
         f.v2raySection.visibility = if (opt.isV2Ray) View.VISIBLE else View.GONE
         f.shadowsocksSection.visibility = if (opt.isShadowsocks || opt.isMrUdp) View.VISIBLE else View.GONE
         if (opt.isMrUdp) {
-            (f.edtSsMethod.parent as? com.google.android.material.textfield.TextInputLayout)?.hint = "Username"
-            (f.edtSsMethod.parent as? com.google.android.material.textfield.TextInputLayout)?.helperText = "VPS MR-UDP username"
+            // No Username field for MR-UDP: the app sends a fixed internal
+            // username ("mrudp") - the user only fills Server/Port/Password.
+            (f.edtSsMethod.parent as? com.google.android.material.textfield.TextInputLayout)?.visibility = View.GONE
             (f.edtSsPassword.parent as? com.google.android.material.textfield.TextInputLayout)?.hint = "Password"
             f.chkSsUdp.text = "UDP transport"
             f.chkSsUdp.isChecked = true
         } else if (opt.isShadowsocks) {
+            (f.edtSsMethod.parent as? com.google.android.material.textfield.TextInputLayout)?.visibility = View.VISIBLE
             (f.edtSsMethod.parent as? com.google.android.material.textfield.TextInputLayout)?.hint = "Method"
             (f.edtSsMethod.parent as? com.google.android.material.textfield.TextInputLayout)?.helperText = "e.g. aes-256-gcm"
             (f.edtSsPassword.parent as? com.google.android.material.textfield.TextInputLayout)?.hint = "Password"
@@ -1979,15 +1985,16 @@ class MainActivity : AppCompatActivity() {
 
         if (envelope.has("mru")) {
             // ===== كود MRVPN:// كيغلف معطيات MR-UDP (مفتاح "mru") =====
+            // ماكاينش Username - البروتوكول كيستعمل يوزرنيم ثابت داخلي
+            // (MR_UDP_USERNAME)، حتى لو "u" جا فالكود القديم كنتجاهلوه.
             val mru = envelope.optJSONObject("mru") ?: JSONObject()
             val server = mru.optString("h", "").trim()
             val port = mru.optInt("p", 0)
-            val user = mru.optString("u", "").trim()
             val password = mru.optString("w", "")
 
-            if (server.isEmpty() || port !in 1..65535 || user.isEmpty() || password.length < 8) {
+            if (server.isEmpty() || port !in 1..65535 || password.length < 8) {
                 appendLog("ERROR: Invalid Configuration.")
-                showInvalidCodeDialog("MR-UDP requires Server, Port, Username and a password of at least 8 characters.")
+                showInvalidCodeDialog("MR-UDP requires Server, Port and a password of at least 8 characters.")
                 return
             }
 
@@ -1995,7 +2002,7 @@ class MainActivity : AppCompatActivity() {
                 .putString("protocol", "MR-UDP")
                 .putString("ssServer", server)
                 .putString("ssPort", port.toString())
-                .putString("ssMethod", user)
+                .putString("ssMethod", MR_UDP_USERNAME)
                 .putString("ssPassword", password)
                 .putBoolean("ssUdp", true)
                 .apply()
@@ -2568,11 +2575,10 @@ class MainActivity : AppCompatActivity() {
                     val f = sshFragment
                     val server = f?.edtSsServer?.text?.toString()?.trim() ?: ""
                     val port = f?.edtSsPort?.text?.toString()?.trim()?.toIntOrNull()
-                    val user = f?.edtSsMethod?.text?.toString()?.trim() ?: ""
                     val password = f?.edtSsPassword?.text?.toString() ?: ""
-                    if (server.isEmpty() || port == null || port !in 1..65535 || user.isEmpty() || password.length < 8) {
+                    if (server.isEmpty() || port == null || port !in 1..65535 || password.length < 8) {
                         appendLog("ERROR: Invalid Configuration.")
-                        showInvalidCodeDialog("MR-UDP requires Server, Port, Username and a password of at least 8 characters.")
+                        showInvalidCodeDialog("MR-UDP requires Server, Port and a password of at least 8 characters.")
                         return
                     }
                 }
@@ -2742,12 +2748,12 @@ class MainActivity : AppCompatActivity() {
             } else if (manualProtocol == "MR-UDP") {
                 val server = f?.edtSsServer?.text?.toString()?.trim() ?: ""
                 val port = f?.edtSsPort?.text?.toString()?.trim()?.toIntOrNull() ?: 0
-                val user = f?.edtSsMethod?.text?.toString()?.trim() ?: ""
                 val password = f?.edtSsPassword?.text?.toString() ?: ""
                 intent.putExtra(SshVpnService.EXTRA_MODE, SshVpnService.MODE_MRUDP)
                 intent.putExtra("host", server)
                 intent.putExtra("port", port)
-                intent.putExtra("user", user)
+                // Username is fixed internally - never taken from the UI.
+                intent.putExtra("user", MR_UDP_USERNAME)
                 intent.putExtra("pass", password)
                 StateStore.write(applicationContext, SshVpnService.STATE_CONNECTING, requestId)
                 startService(intent)

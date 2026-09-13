@@ -84,6 +84,11 @@ class SshVpnService : VpnService() {
         const val MODE_SSH = "SSH"
         const val MODE_XRAY = "XRAY"
         const val MODE_MRUDP = "MRUDP"
+        // MR-UDP: fixed internal username. The UI has no Username field -
+        // Server/Port/Password only - this constant is what actually gets
+        // sent to the server as the username part of HELLO, matching
+        // mr_udp_server.py which is started with MR_USER=mrudp.
+        private const val MR_UDP_USERNAME = "mrudp"
         // JSON ديال ParsedProxyConfig.toJson() - مبني من طرف MainActivity/
         // الاستيراد قبل ما يبدا الـservice.
         const val EXTRA_XRAY_CONFIG = "xrayParsedConfigJson"
@@ -354,7 +359,8 @@ class SshVpnService : VpnService() {
         if (mode == MODE_MRUDP) {
             val mrHost = intent?.getStringExtra("host") ?: return START_NOT_STICKY
             val mrPort = intent.getIntExtra("port", 4433)
-            val mrUser = intent?.getStringExtra("user") ?: ""
+            // Username is fixed internally - never read from the UI/intent.
+            val mrUser = MR_UDP_USERNAME
             val mrPass = intent?.getStringExtra("pass") ?: ""
             lastMrUdpHost = mrHost; lastMrUdpPort = mrPort; lastMrUdpUser = mrUser; lastMrUdpPass = mrPass
             logTag = "MR-UDP"
