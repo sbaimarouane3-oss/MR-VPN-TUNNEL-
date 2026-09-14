@@ -151,54 +151,24 @@ class MrUdpClient(
             while (running && !tcp.isClosed) {
                 try {
                     val dp = DatagramPacket(buf, buf.size); udpSock.receive(dp)
-                    if (dp.length < 4 || buf[0].toInt() != 0 || buf[1].toInt() != 0) continue
-                    val frag = buf[2].toInt() and 255; if (frag != 0) continue
+                    if (dp.length < 10 || buf[0].toInt() != 0 || buf[1].toInt() != 0) continue
+                    val frag = buf[2].toInt(); if (frag != 0) continue
                     var off = 3
-                    if (off >= dp.length) continue
                     val atyp = buf[off++].toInt() and 255
-                    val host: String
-                    when (atyp) {
-                        1 -> {
-                            if (off + 4 > dp.length) continue
-                            host = "${buf[off].toInt() and 255}.${buf[off+1].toInt() and 255}.${buf[off+2].toInt() and 255}.${buf[off+3].toInt() and 255}"
-                            off += 4
-                        }
-                        3 -> {
-                            if (off >= dp.length) continue
-                            val l = buf[off++].toInt() and 255
-                            if (l == 0 || off + l > dp.length) continue
-                            host = String(buf, off, l, Charsets.US_ASCII)
-                            off += l
-                        }
-                        4 -> {
-                            if (off + 16 > dp.length) continue
-                            val h = java.net.InetAddress.getByAddress(buf.copyOfRange(off, off + 16))
-                            host = h.hostAddress ?: continue
-                            off += 16
-                        }
+                    val host = when (atyp) {
+                        1 -> { val h = "${buf[off].toInt() and 255}.${buf[off+1].toInt() and 255}.${buf[off+2].toInt() and 255}.${buf[off+3].toInt() and 255}"; off += 4; h }
+                        3 -> { val l = buf[off++].toInt() and 255; val h = String(buf, off, l, Charsets.US_ASCII); off += l; h }
                         else -> continue
                     }
-                    if (off + 2 > dp.length) continue
                     val port = ((buf[off++].toInt() and 255) shl 8) or (buf[off++].toInt() and 255)
-                    if (off > dp.length) continue
                     val data = buf.copyOfRange(off, dp.length)
                     sendUdp(host, port, data) { response ->
                         try {
-                            val target = java.net.InetAddress.getByName(host)
-                            val hb = target.address
-                            val out = if (hb.size == 16) ByteArray(22 + response.size) else ByteArray(10 + response.size)
-                            out[0]=0; out[1]=0; out[2]=0
-                            if (hb.size == 16) {
-                                out[3]=4
-                                System.arraycopy(hb,0,out,4,16)
-                                out[20]=(port ushr 8).toByte(); out[21]=port.toByte()
-                                System.arraycopy(response,0,out,22,response.size)
-                            } else {
-                                out[3]=1
-                                System.arraycopy(hb,0,out,4,4)
-                                out[8]=(port ushr 8).toByte(); out[9]=port.toByte()
-                                System.arraycopy(response,0,out,10,response.size)
-                            }
+                            val hb = java.net.InetAddress.getByName(host).address
+                            val out = ByteArray(10 + response.size)
+                            out[0]=0; out[1]=0; out[2]=0; out[3]=1
+                            if (hb.size == 4) System.arraycopy(hb,0,out,4,4) else return@sendUdp
+                            out[8]=(port ushr 8).toByte(); out[9]=port.toByte(); System.arraycopy(response,0,out,10,response.size)
                             udpSock.send(DatagramPacket(out,out.size,dp.address,dp.port))
                         } catch (_: Throwable) {}
                     }
